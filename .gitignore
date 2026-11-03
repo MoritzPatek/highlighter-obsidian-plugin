@@ -1,0 +1,14 @@
+node_modules/
+main.js
+*.map
+data.json
+.DS_Store
+dist/
+
+# Test vault: build output and Obsidian runtime state are generated
+test-vault/.obsidian/plugins/
+test-vault/.obsidian/workspace.json
+test-vault/.obsidian/workspace-mobile.json
+test-vault/.obsidian/core-plugins.json
+test-vault/.obsidian/appearance.json
+test-vault/.obsidian/graph.json
