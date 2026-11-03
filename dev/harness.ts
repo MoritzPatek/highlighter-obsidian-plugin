@@ -10,7 +10,29 @@ const view = q.get('view') ?? 'popover';
 const remove = q.get('remove') === '1';
 const active = Number(q.get('active') ?? '0');
 
-if (view === 'popover') {
+if (view === 'autoshow') {
+	// Simulates the mouse-select flow: select text, popover opens after ~150ms.
+	document.getElementById('editor')!.hidden = false;
+	const target = document.getElementById('sel')!;
+	const sel = getSelection()!;
+	const range = document.createRange();
+	range.selectNodeContents(target);
+	sel.removeAllRanges();
+	sel.addRange(range);
+	window.setTimeout(() => {
+		const r = range.getBoundingClientRect();
+		const popover = new ColorPopover({
+			colors: DEFAULT_COLORS,
+			lastUsedIndex: 0,
+			showRemove: false,
+			onChoose: (c) => console.log('chose', JSON.stringify(c)),
+		});
+		popover.mount(
+			{ left: r.left, top: r.top, bottom: r.bottom },
+			document.getElementById('editor')!.getBoundingClientRect(),
+		);
+	}, 150);
+} else if (view === 'popover') {
 	document.getElementById('editor')!.hidden = false;
 	const target = document.getElementById(remove ? 'marked' : 'sel')!;
 	const range = document.createRange();

@@ -1,4 +1,4 @@
-import { App, PluginSettingTab, Setting } from 'obsidian';
+import { App, Platform, PluginSettingTab, Setting } from 'obsidian';
 import type ColorHighlighterPlugin from './main';
 import { DEFAULT_COLORS, MAX_NAME_LENGTH, splitColor, withHighlightAlpha } from './settings';
 
@@ -22,6 +22,19 @@ export class ColorHighlighterSettingTab extends PluginSettingTab {
 			'. Assign Cmd+H in Settings → Hotkeys. Colors are applied at 33% opacity so text stays readable in light and dark themes.',
 		);
 		new Setting(containerEl).setName('Highlight colors').setDesc(desc).setHeading();
+
+		new Setting(containerEl)
+			.setName('Show picker when selecting text')
+			.setDesc(
+				'Open the color picker as soon as you select text with the mouse. Cmd+H always works.' +
+					(Platform.isMobile ? ' Desktop only.' : ''),
+			)
+			.addToggle((toggle) =>
+				toggle.setValue(this.plugin.settings.autoShow).onChange(async (value) => {
+					this.plugin.settings.autoShow = value;
+					await this.plugin.saveSettings();
+				}),
+			);
 
 		this.plugin.settings.colors.forEach((entry, index) => {
 			const label = `Color ${index + 1}`;

@@ -40,6 +40,7 @@ describe('sanitizeSettings', () => {
 		const saved = {
 			colors: DEFAULT_COLORS.map((c, i) => ({ name: `C${i}`, color: '#11223355' })),
 			lastUsedIndex: 3,
+			autoShow: false,
 		};
 		expect(sanitizeSettings(saved)).toEqual(saved);
 	});
@@ -122,5 +123,16 @@ describe('withHighlightAlpha', () => {
 	it('appends the fixed alpha to opaque and replaces an existing one', () => {
 		expect(withHighlightAlpha('#abcdef')).toBe('#ABCDEF55');
 		expect(withHighlightAlpha('#abcdef12')).toBe('#ABCDEF55');
+	});
+});
+
+describe('autoShow setting', () => {
+	it('defaults to on, also for older saved data', () => {
+		expect(DEFAULT_SETTINGS.autoShow).toBe(true);
+		expect(sanitizeSettings({ colors: [], lastUsedIndex: 1 }).autoShow).toBe(true);
+		expect(sanitizeSettings({ autoShow: 'yes' }).autoShow).toBe(true);
+	});
+	it('keeps a saved value', () => {
+		expect(sanitizeSettings({ autoShow: false }).autoShow).toBe(false);
 	});
 });

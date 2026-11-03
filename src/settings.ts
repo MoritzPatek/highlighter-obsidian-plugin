@@ -13,6 +13,8 @@ export interface ColorHighlighterSettings {
 	colors: HighlightColor[];
 	/** Index into `colors` of the color used last. */
 	lastUsedIndex: number;
+	/** Open the picker automatically after a mouse selection. */
+	autoShow: boolean;
 }
 
 /** Alpha appended to every highlight color (33%). Not user-editable. */
@@ -42,6 +44,7 @@ const LEGACY_DEFAULT_COLORS: readonly string[] = [
 export const DEFAULT_SETTINGS: ColorHighlighterSettings = {
 	colors: DEFAULT_COLORS.map((c) => ({ ...c })),
 	lastUsedIndex: 0,
+	autoShow: true,
 };
 
 const HEX_RE = /^#(?:[0-9a-f]{6}|[0-9a-f]{8})$/i;
@@ -73,7 +76,10 @@ export function sanitizeSettings(raw: unknown): ColorHighlighterSettings {
 	const lastUsedIndex =
 		typeof idx === 'number' && Number.isInteger(idx) && idx >= 0 && idx < colors.length ? idx : 0;
 
-	return { colors, lastUsedIndex };
+	// Older saved data has no autoShow: default ON.
+	const autoShow = typeof data.autoShow === 'boolean' ? data.autoShow : true;
+
+	return { colors, lastUsedIndex, autoShow };
 }
 
 /**

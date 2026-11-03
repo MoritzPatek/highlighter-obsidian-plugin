@@ -20,6 +20,14 @@ Select the word **banana** in this line: I would like a banana today.
 - [ ] Esc, a click outside or scrolling closes the popover and changes nothing (try it on another word).
 - [ ] The next time you press Cmd+H, the color you used last is pre-focused (marked with a dot).
 
+## 1b. Picker on mouse selection
+
+- [ ] Select a few words by dragging with the mouse (or double-click a word). After a moment the same popover appears under the selection, without pressing Cmd+H.
+- [ ] While it is open, press Cmd+C: the popover closes and the text is copied. Typing, Delete and Shift+arrows also close it and work as usual.
+- [ ] Select with Shift+arrows or Cmd+A: no popover appears (Cmd+H still opens it).
+- [ ] Dragging a new selection moves the popover to the new place. Clicking elsewhere closes it.
+- [ ] Settings -> Color Highlighter -> "Show picker when selecting text" off: selecting with the mouse no longer opens it. Cmd+H still does.
+
 ## 2. Recolor, never nest
 
 - [ ] Select the highlighted word again, press Cmd+H, pick another color. The color changes. Switch the note to source mode (Cmd+P, "Toggle Live Preview/Source mode"): there is only ONE `<mark ...>` around the word, not two.

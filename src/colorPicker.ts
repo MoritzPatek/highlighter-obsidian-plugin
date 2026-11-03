@@ -31,6 +31,8 @@ interface CmView {
  * @param lastUsedIndex Color to focus first; also marked with a dot.
  * @param isHighlighted True when the selection is already highlighted, so
  *                      the picker also offers "Remove highlight".
+ * @param autoShown     Opened by a mouse selection: unhandled keys close the popover and
+ *                      pass through to the editor instead of being swallowed.
  * @returns The choice, or null when the user cancelled (Esc, click outside, scroll, blur).
  */
 export function openColorPicker(
@@ -39,6 +41,7 @@ export function openColorPicker(
 	colors: readonly HighlightColor[],
 	lastUsedIndex: number,
 	isHighlighted: boolean,
+	autoShown = false,
 ): Promise<PickerChoice | null> {
 	return new Promise((resolve) => {
 		const cm = (editor as unknown as { cm?: CmView }).cm;
@@ -108,11 +111,22 @@ export function openColorPicker(
 				popover.chooseColor(i);
 				return false;
 			}
-			// Swallow other typing keys so nothing replaces the selection while the popover is open.
-			// Modified keys (Cmd+P etc.) are not matched by this handler and pass through.
+			if (autoShown) {
+				settle(null);
+				return true; // pass through untouched
+			}
+			// Swallow typing keys so nothing replaces the selection while the popover is open.
 			return evt.key.length === 1 ? false : true;
 		});
-		scope.register(['Shift'], null, (evt) => (evt.key.length === 1 ? false : true));
+		if (autoShown) {
+			// Modified keys (Cmd+C, Shift+arrows, ...): close and let them through.
+			scope.register(null, null, () => {
+				settle(null);
+				return true;
+			});
+		} else {
+			scope.register(['Shift'], null, (evt) => (evt.key.length === 1 ? false : true));
+		}
 		app.keymap.pushScope(scope);
 		cleanups.push(() => app.keymap.popScope(scope));
 

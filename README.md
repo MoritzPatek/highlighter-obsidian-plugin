@@ -53,6 +53,7 @@ You can also download `main.js`, `manifest.json` and `styles.css` separately fro
 | Action | How |
 | --- | --- |
 | Highlight with a picker | Select text, run "Pick color" (your hotkey, e.g. Cmd+H), choose a color, Enter. Keys 1-5 pick instantly |
+| Pick right after selecting | Select text with the mouse: the picker opens by itself (desktop only; turn it off in the settings). Any other key closes it and works as usual |
 | Cancel | Esc |
 | Change the color of a highlight | Select it (or put the cursor in it), run "Pick color", choose another color |
 | Remove a highlight | "Pick color" on the highlight, then press 0 or choose "Remove highlight", or run the command "Remove highlight" |

@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { clampIndex, computePopoverPosition, digitToIndex, moveIndex } from './pickerLogic';
+import {
+	clampIndex,
+	computePopoverPosition,
+	digitToIndex,
+	moveIndex,
+	shouldAutoShow,
+	type AutoShowInput,
+} from './pickerLogic';
 
 describe('moveIndex', () => {
 	it('wraps forward and backward', () => {
@@ -70,5 +77,40 @@ describe('computePopoverPosition', () => {
 		const p = computePopoverPosition({ ...base, anchor: null });
 		expect(p.left).toBe(500 - 115);
 		expect(p.top).toBe(50 + 650 / 3);
+	});
+});
+
+describe('shouldAutoShow', () => {
+	const ok: AutoShowInput = {
+		enabled: true,
+		isMobile: false,
+		pointerType: 'mouse',
+		startedInEditor: true,
+		viewMode: 'source',
+		selectionCount: 1,
+		from: 3,
+		to: 9,
+		composing: false,
+		pickerOpen: false,
+	};
+	it('shows for a mouse selection in the editor', () => {
+		expect(shouldAutoShow(ok)).toBe(true);
+		expect(shouldAutoShow({ ...ok, pointerType: 'pen' })).toBe(true);
+	});
+	it.each([
+		['disabled', { enabled: false }],
+		['mobile', { isMobile: true }],
+		['touch', { pointerType: 'touch' }],
+		['keyboard / unknown pointer', { pointerType: '' }],
+		['press outside editor', { startedInEditor: false }],
+		['reading view', { viewMode: 'preview' }],
+		['no markdown view', { viewMode: null }],
+		['multi-cursor', { selectionCount: 2 }],
+		['no cursor', { selectionCount: 0 }],
+		['collapsed caret', { from: 5, to: 5 }],
+		['IME composing', { composing: true }],
+		['picker already open', { pickerOpen: true }],
+	] as [string, Partial<AutoShowInput>][])('does not show: %s', (_n, patch) => {
+		expect(shouldAutoShow({ ...ok, ...patch })).toBe(false);
 	});
 });

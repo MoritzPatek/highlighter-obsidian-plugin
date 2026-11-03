@@ -83,3 +83,28 @@ export function computePopoverPosition(input: PositionInput): { left: number; to
 	top = Math.max(margin, Math.min(top, maxTop));
 	return { left, top };
 }
+
+export interface AutoShowInput {
+	enabled: boolean;
+	isMobile: boolean;
+	/** PointerEvent.pointerType of the press that started the selection. */
+	pointerType: string;
+	/** The press started inside an editor (not in the popover or elsewhere). */
+	startedInEditor: boolean;
+	/** 'source' covers Live Preview and Source mode; 'preview' is Reading view; null is no markdown view. */
+	viewMode: 'source' | 'preview' | null;
+	selectionCount: number;
+	from: number;
+	to: number;
+	composing: boolean;
+	pickerOpen: boolean;
+}
+
+/** Should the picker open by itself after a pointer selection? Keyboard selections never reach this. */
+export function shouldAutoShow(i: AutoShowInput): boolean {
+	if (!i.enabled || i.isMobile || i.composing || i.pickerOpen) return false;
+	if (i.pointerType !== 'mouse' && i.pointerType !== 'pen') return false;
+	if (!i.startedInEditor || i.viewMode !== 'source') return false;
+	if (i.selectionCount !== 1) return false;
+	return i.from !== i.to;
+}
