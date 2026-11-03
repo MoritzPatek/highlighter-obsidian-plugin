@@ -15,13 +15,28 @@ export interface ColorHighlighterSettings {
 	lastUsedIndex: number;
 }
 
-/** The default palette. The designer may tweak these; keep them in this one constant. */
+/** Alpha appended to every highlight color (33%). Not user-editable. */
+export const HIGHLIGHT_ALPHA = '55';
+
+/** Longest color name the settings UI accepts. */
+export const MAX_NAME_LENGTH = 20;
+
+/** The default palette (spec: 33% alpha so text stays readable in light and dark). */
 export const DEFAULT_COLORS: readonly HighlightColor[] = [
-	{ name: 'Yellow', color: '#FFF3A3A6' },
-	{ name: 'Green', color: '#BBFABBA6' },
-	{ name: 'Blue', color: '#ADCCFFA6' },
-	{ name: 'Pink', color: '#FFB8EBA6' },
-	{ name: 'Purple', color: '#D2B3FFA6' },
+	{ name: 'Yellow', color: '#FFD60A' + HIGHLIGHT_ALPHA },
+	{ name: 'Green', color: '#3DDC84' + HIGHLIGHT_ALPHA },
+	{ name: 'Blue', color: '#4DA3FF' + HIGHLIGHT_ALPHA },
+	{ name: 'Pink', color: '#FF5C8A' + HIGHLIGHT_ALPHA },
+	{ name: 'Purple', color: '#A67CFF' + HIGHLIGHT_ALPHA },
+];
+
+/** Defaults of version 0.1.0 (opacity 65%). Saved data with these exact colors is migrated to the new defaults. */
+const LEGACY_DEFAULT_COLORS: readonly string[] = [
+	'#FFF3A3A6',
+	'#BBFABBA6',
+	'#ADCCFFA6',
+	'#FFB8EBA6',
+	'#D2B3FFA6',
 ];
 
 export const DEFAULT_SETTINGS: ColorHighlighterSettings = {
@@ -48,9 +63,10 @@ export function sanitizeSettings(raw: unknown): ColorHighlighterSettings {
 		const item = rawColors[i];
 		const entry = (typeof item === 'object' && item !== null ? item : {}) as Record<string, unknown>;
 		const name =
-			typeof entry.name === 'string' && entry.name.trim() !== '' ? entry.name.trim() : def.name;
-		const color = isValidHexColor(entry.color) ? normalizeHex(entry.color) : def.color;
-		return { name, color };
+			typeof entry.name === 'string' && entry.name.trim() !== ''
+				? entry.name.trim().slice(0, MAX_NAME_LENGTH)
+				: def.name;
+		return { name, color: migrateColor(entry.color, i) };
 	});
 
 	const idx = data.lastUsedIndex;
@@ -58,6 +74,24 @@ export function sanitizeSettings(raw: unknown): ColorHighlighterSettings {
 		typeof idx === 'number' && Number.isInteger(idx) && idx >= 0 && idx < colors.length ? idx : 0;
 
 	return { colors, lastUsedIndex };
+}
+
+/**
+ * Saved color -> current format: opaque RGB plus the fixed alpha. Colors saved
+ * by older versions with a different alpha keep their RGB; the old default
+ * palette is replaced by the new one.
+ */
+function migrateColor(value: unknown, index: number): string {
+	const def = (DEFAULT_COLORS[index] as HighlightColor).color;
+	if (!isValidHexColor(value)) return def;
+	const full = normalizeHex(value);
+	if (full === LEGACY_DEFAULT_COLORS[index]) return def;
+	return withHighlightAlpha(full);
+}
+
+/** #RRGGBB or #RRGGBBAA -> #RRGGBB + the fixed highlight alpha. */
+export function withHighlightAlpha(hex: string): string {
+	return hex.slice(0, 7).toUpperCase() + HIGHLIGHT_ALPHA;
 }
 
 /** Upper-case a hex color and add full alpha when missing: #abc123 -> #ABC123FF. */

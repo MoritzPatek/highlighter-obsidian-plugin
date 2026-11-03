@@ -1,0 +1,9 @@
+{
+  "color-highlighter:highlight-with-color": [
+    {
+      "modifiers": ["Mod"],
+      "key": "H"
+    }
+  ],
+  "editor:toggle-highlight": []
+}

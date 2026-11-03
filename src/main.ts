@@ -1,10 +1,9 @@
-import { Editor, Plugin } from 'obsidian';
+import { Editor, Notice, Plugin } from 'obsidian';
 import { openColorPicker } from './colorPicker';
 import { applyHighlight, getHighlightState, removeHighlight, type TextEdit } from './highlight';
 import { ColorHighlighterSettingTab } from './settingsTab';
 import {
 	DEFAULT_SETTINGS,
-	findColorIndex,
 	sanitizeSettings,
 	type ColorHighlighterSettings,
 } from './settings';
@@ -26,8 +25,8 @@ export default class ColorHighlighterPlugin extends Plugin {
 
 		this.addCommand({
 			id: 'highlight-with-color',
-			name: 'Highlight with color…',
-			hotkeys: [{ modifiers: ['Mod'], key: 'h' }],
+			name: 'Pick color',
+			// No default hotkey on purpose: users bind their own in Settings -> Hotkeys.
 			editorCallback: (editor) => this.highlightWithPicker(editor),
 		});
 
@@ -61,13 +60,17 @@ export default class ColorHighlighterPlugin extends Plugin {
 	private async highlightWithPicker(editor: Editor) {
 		const ctx = this.getSelectionContext(editor);
 		const state = getHighlightState(ctx.text, ctx.from, ctx.to);
-		const current = findColorIndex(this.settings.colors, state.color);
-		const initialIndex = current >= 0 ? current : this.settings.lastUsedIndex;
+		// Nothing selected and the caret is not inside a highlight: nothing to color.
+		if (ctx.from === ctx.to && !state.highlighted) {
+			new Notice('Select some text to highlight.');
+			return;
+		}
 
 		const choice = await openColorPicker(
 			this.app,
+			editor,
 			this.settings.colors,
-			initialIndex,
+			this.settings.lastUsedIndex,
 			state.highlighted,
 		);
 		if (!choice) return;
@@ -115,6 +118,14 @@ export default class ColorHighlighterPlugin extends Plugin {
 		if (!edit) return;
 		const at = (offset: number) => editor.offsetToPos(ctx.base + offset);
 		editor.replaceRange(edit.insert, at(edit.from), at(edit.to));
-		editor.setSelection(at(edit.selFrom), at(edit.selTo));
+		// Collapse to the end of the affected text so typing continues after it.
+		// A non-empty highlight: put the caret after the closing tag.
+		let end = edit.selTo;
+		if (edit.selFrom !== edit.selTo) {
+			const closing = '</mark>';
+			const after = editor.getRange(at(end), at(end + closing.length));
+			if (after === closing) end += closing.length;
+		}
+		editor.setCursor(at(end));
 	}
 }

@@ -7,18 +7,18 @@ Other notes in this vault to practice on: [[Sample text]], [[Lists and table]].
 ## 0. Setup
 
 - [ ] Settings -> Community plugins shows "Color Highlighter" and it is switched on.
-- [ ] Settings -> Hotkeys, search "Color Highlighter": you see "Highlight with color...", five "Highlight: <color>" commands and "Remove highlight".
-- [ ] "Highlight with color..." is bound to Cmd+H (Ctrl+H on Windows and Linux). If it shows a conflict, rebind it (see the README).
+- [ ] Settings -> Hotkeys, search "Color Highlighter": you see "Pick color", five "Highlight: <color>" commands and "Remove highlight".
+- [ ] "Pick color" is bound to Cmd+H (Ctrl+H on Windows and Linux). This vault ships a `hotkeys.json` that also unbinds Obsidian's "Toggle highlight". In your own vault, do both yourself: Settings -> Hotkeys, remove Cmd+H from "Toggle highlight", then add Cmd+H to "Color Highlighter: Pick color" (see the README).
 
 ## 1. Basic highlight
 
 Select the word **banana** in this line: I would like a banana today.
 
-- [ ] Press Cmd+H. A list of 5 colors appears (Yellow, Green, Blue, Pink, Purple).
-- [ ] Arrow keys move the selection, Enter picks it.
+- [ ] Press Cmd+H. A small popover with 5 numbered color swatches appears under the selection, the selection stays visible.
+- [ ] Arrow keys / Tab move the focus ring (wraps around), Enter or Space applies it, keys 1-5 apply instantly. Clicking a swatch works too.
 - [ ] The word is highlighted in that color (check rendering).
-- [ ] Esc closes the list and changes nothing (try it on another word).
-- [ ] The next time you press Cmd+H, the color you used last is pre-selected.
+- [ ] Esc, a click outside or scrolling closes the popover and changes nothing (try it on another word).
+- [ ] The next time you press Cmd+H, the color you used last is pre-focused (marked with a dot).
 
 ## 2. Recolor, never nest
 
@@ -28,7 +28,7 @@ Select the word **banana** in this line: I would like a banana today.
 
 ## 3. Remove
 
-- [ ] Select a highlighted word and press Cmd+H. The list now ends with "Remove highlight". Choose it. The text stays, the highlight is gone.
+- [ ] Select a highlighted word and press Cmd+H. The popover shows an extra dashed X button ("Remove highlight"). Press 0 or click it. The text stays, the highlight is gone.
 - [ ] Run "Remove highlight" from the command palette (Cmd+P) on a highlighted word. Same result.
 - [ ] Run "Remove highlight" on plain text. Nothing happens, no error.
 
@@ -42,7 +42,8 @@ Open [[Sample text]]. It contains ==native highlights==.
 
 ## 5. Empty selection
 
-- [ ] Click in an empty spot, press Cmd+H, pick a color. An empty highlight is inserted and the cursor sits inside it. Type a few words: they are highlighted.
+- [ ] Click in an empty spot (no selection), press Cmd+H. No popover; the notice "Select some text to highlight." appears.
+- [ ] Put the cursor inside an already highlighted word (no selection), press Cmd+H, pick a color. The whole highlight changes.
 
 ## 6. Multi-line selections
 
@@ -68,8 +69,8 @@ Open [[Lists and table]].
 
 ## 9. Settings
 
-- [ ] Settings -> Color Highlighter: change a color and opacity. Highlight some text: the new color is used.
-- [ ] Reset colors restores the five defaults.
+- [ ] Settings -> Color Highlighter: change a color and a name (opacity is fixed at 33%). Highlight some text: the new color is used.
+- [ ] "Reset to defaults" restores the five defaults.
 
 ## 10. Portability
 

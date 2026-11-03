@@ -1,16 +1,156 @@
 /* Color Highlighter */
 
-.color-highlighter-suggestion {
-	display: flex;
-	align-items: center;
-	gap: var(--size-4-2);
+/* ---------- Popover ---------- */
+.color-highlighter-popover {
+	position: fixed;
+	z-index: var(--layer-popover, 50);
+	box-sizing: border-box;
+	padding: 6px;
+	background: var(--background-secondary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	box-shadow: var(--shadow-s);
+	font-family: var(--font-ui);
+	animation: color-highlighter-in 90ms ease-out;
+}
+@keyframes color-highlighter-in {
+	from {
+		opacity: 0;
+		transform: translateY(3px);
+	}
+}
+@media (prefers-reduced-motion: reduce) {
+	.color-highlighter-popover {
+		animation: none;
+	}
 }
 
-.color-highlighter-swatch {
+.color-highlighter-popover__row {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+}
+
+/* Doubled class beats Obsidian's generic button styles. */
+.color-highlighter-popover .color-highlighter-popover__swatch.color-highlighter-popover__swatch {
+	position: relative;
+	display: grid;
+	place-items: center;
 	flex: none;
-	width: 1.1em;
-	height: 1.1em;
+	width: 40px;
+	height: 40px;
+	min-width: 0;
+	padding: 0;
+	border: 0;
 	border-radius: var(--radius-s);
+	box-shadow: none;
+	font: 600 13px/1 var(--font-ui);
+	color: var(--text-normal);
+	cursor: pointer;
+}
+.color-highlighter-popover .color-highlighter-popover__swatch.color-highlighter-popover__swatch:hover {
+	box-shadow: inset 0 0 0 1px var(--text-faint);
+}
+.color-highlighter-popover .color-highlighter-popover__swatch.color-highlighter-popover__swatch.is-active {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: 2px;
+}
+.color-highlighter-popover__swatch.is-current::after {
+	content: '';
+	position: absolute;
+	top: 4px;
+	right: 4px;
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	background: var(--text-normal);
+}
+.color-highlighter-popover__divider {
+	align-self: stretch;
+	width: 1px;
+	margin: 4px;
+	background: var(--background-modifier-border);
+}
+.color-highlighter-popover .color-highlighter-popover__swatch.color-highlighter-popover__swatch.is-remove {
+	background: transparent;
+	border: 1px dashed var(--text-faint);
+	color: var(--text-muted);
+}
+.color-highlighter-popover__swatch.is-remove svg {
+	width: 18px;
+	height: 18px;
+	fill: none;
+	stroke: currentColor;
+	stroke-width: 2;
+	stroke-linecap: round;
+}
+
+.color-highlighter-popover__caption {
+	display: flex;
+	justify-content: space-between;
+	gap: 16px;
+	padding: 8px 4px 2px;
+	font-size: 12px;
+	white-space: nowrap;
+}
+.color-highlighter-popover__name {
+	color: var(--text-normal);
+	font-weight: 500;
+}
+.color-highlighter-popover__keys {
+	color: var(--text-muted);
+}
+.color-highlighter-popover__keys kbd {
+	padding: 0 4px;
 	border: 1px solid var(--background-modifier-border);
-	background-color: var(--color-highlighter-swatch);
+	border-radius: 3px;
+	font: inherit;
+	font-size: 11px;
+}
+
+@media (max-width: 480px) {
+	.color-highlighter-popover .color-highlighter-popover__swatch.color-highlighter-popover__swatch {
+		width: 44px;
+		height: 44px;
+	}
+	.color-highlighter-popover__keys {
+		display: none;
+	}
+}
+
+/* ---------- Settings tab ---------- */
+.color-highlighter-chip {
+	display: grid;
+	place-items: center;
+	flex: none;
+	width: 44px;
+	height: 30px;
+	border-radius: var(--radius-s);
+	font-size: 13px;
+	font-weight: 600;
+	color: var(--text-normal);
+}
+.color-highlighter-setting input[type='text'].color-highlighter-name {
+	width: 150px;
+}
+.color-highlighter-setting input[type='color'] {
+	width: 30px;
+	height: 30px;
+	flex: none;
+}
+
+@media (max-width: 480px) {
+	.color-highlighter-setting.setting-item {
+		flex-direction: column;
+		align-items: stretch;
+		gap: 8px;
+	}
+	.color-highlighter-setting .setting-item-control {
+		justify-content: space-between;
+	}
+	.color-highlighter-setting input[type='text'].color-highlighter-name {
+		flex: 1;
+		min-width: 0;
+		width: auto;
+	}
 }

@@ -1,114 +1,147 @@
 /**
- * Color picker seam.
+ * Color picker seam: the plugin only talks to `openColorPicker`.
  *
- * The plugin only talks to `openColorPicker`. The temporary implementation
- * below is a SuggestModal; the real popup (designed separately) replaces the
- * body of this function, or the file, without touching main.ts.
+ * Shows a floating popover under the selection. Keys are handled by an
+ * Obsidian Scope pushed on app.keymap, so the editor keeps focus and the
+ * selection stays visible.
  */
-import { App, SuggestModal } from 'obsidian';
+import { App, Editor, Scope } from 'obsidian';
+import { ColorPopover, type PopoverChoice } from './popover';
+import { digitToIndex } from './pickerLogic';
 import type { HighlightColor } from './settings';
 
 /** What the user chose. */
-export type PickerChoice =
-	| { type: 'color'; index: number }
-	| { type: 'remove' };
+export type PickerChoice = PopoverChoice;
+
+/** The parts of the CodeMirror 6 EditorView we use (obsidian's typings do not expose `editor.cm`). */
+interface CmView {
+	dom: HTMLElement;
+	contentDOM: HTMLElement;
+	scrollDOM: HTMLElement;
+	coordsAtPos(pos: number): { left: number; right: number; top: number; bottom: number } | null;
+	state: { selection: { main: { from: number; to: number } } };
+}
 
 /**
  * Show the picker.
  *
  * @param app           Obsidian app.
- * @param colors        The colors to offer, in order (5 by default).
- * @param initialIndex  Index of the color to preselect (current or last used).
+ * @param editor        The editor holding the selection (used to anchor the popover).
+ * @param colors        The colors to offer, in order (5).
+ * @param lastUsedIndex Color to focus first; also marked with a dot.
  * @param isHighlighted True when the selection is already highlighted, so
- *                      the picker should also offer "Remove highlight".
- * @returns The choice, or null when the user cancelled (Esc, click outside).
+ *                      the picker also offers "Remove highlight".
+ * @returns The choice, or null when the user cancelled (Esc, click outside, scroll, blur).
  */
 export function openColorPicker(
 	app: App,
+	editor: Editor,
 	colors: readonly HighlightColor[],
-	initialIndex: number,
+	lastUsedIndex: number,
 	isHighlighted: boolean,
 ): Promise<PickerChoice | null> {
 	return new Promise((resolve) => {
-		new SuggestColorModal(app, colors, initialIndex, isHighlighted, resolve).open();
+		const cm = (editor as unknown as { cm?: CmView }).cm;
+		const cleanups: (() => void)[] = [];
+		let settled = false;
+
+		const settle = (choice: PickerChoice | null) => {
+			if (settled) return;
+			settled = true;
+			cleanups.forEach((fn) => fn());
+			popover.destroy();
+			resolve(choice);
+			// Return focus to the editor; applying the edit happens in the caller.
+			editor.focus();
+		};
+
+		const popover = new ColorPopover({
+			colors,
+			lastUsedIndex,
+			showRemove: isHighlighted,
+			onChoose: (choice) => settle(choice),
+		});
+
+		// Anchor: selection start, bottom of the selection's last line.
+		let anchor: { left: number; top: number; bottom: number } | null = null;
+		if (cm) {
+			try {
+				const { from, to } = cm.state.selection.main;
+				const start = cm.coordsAtPos(from);
+				const end = cm.coordsAtPos(to);
+				if (start) anchor = { left: start.left, top: start.top, bottom: (end ?? start).bottom };
+			} catch {
+				anchor = null;
+			}
+		}
+		const editorRect = (cm?.dom ?? document.body).getBoundingClientRect();
+		popover.mount(anchor, editorRect);
+
+		// Keys
+		const scope = new Scope(app.scope);
+		const keys: [Parameters<Scope['register']>[0], string, () => void][] = [
+			[[], 'ArrowRight', () => popover.move('next')],
+			[[], 'ArrowDown', () => popover.move('next')],
+			[[], 'Tab', () => popover.move('next')],
+			[[], 'ArrowLeft', () => popover.move('prev')],
+			[[], 'ArrowUp', () => popover.move('prev')],
+			[['Shift'], 'Tab', () => popover.move('prev')],
+			[[], 'Home', () => popover.move('first')],
+			[[], 'End', () => popover.move('last')],
+			[[], 'Enter', () => popover.chooseActive()],
+			[[], ' ', () => popover.chooseActive()],
+			[[], '0', () => popover.chooseRemove()],
+			[[], 'Backspace', () => popover.chooseRemove()],
+			[[], 'Delete', () => popover.chooseRemove()],
+			[[], 'Escape', () => settle(null)],
+			[['Mod'], 'h', () => settle(null)],
+		];
+		for (const [mods, key, fn] of keys) {
+			scope.register(mods, key, () => {
+				fn();
+				return false; // preventDefault, stop other handlers
+			});
+		}
+		scope.register([], null, (evt) => {
+			const i = digitToIndex(evt.key, colors.length);
+			if (i >= 0) {
+				popover.chooseColor(i);
+				return false;
+			}
+			// Swallow other typing keys so nothing replaces the selection while the popover is open.
+			// Modified keys (Cmd+P etc.) are not matched by this handler and pass through.
+			return evt.key.length === 1 ? false : true;
+		});
+		scope.register(['Shift'], null, (evt) => (evt.key.length === 1 ? false : true));
+		app.keymap.pushScope(scope);
+		cleanups.push(() => app.keymap.popScope(scope));
+
+		// Click outside closes. The popover itself prevents default on mousedown.
+		const onDown = (e: MouseEvent) => {
+			if (!popover.contains(e.target as Node)) settle(null);
+		};
+		document.addEventListener('mousedown', onDown, true);
+		cleanups.push(() => document.removeEventListener('mousedown', onDown, true));
+
+		// Scrolling moves the selection away from the popover: close.
+		const onScroll = (e: Event) => {
+			if (!popover.contains(e.target as Node)) settle(null);
+		};
+		document.addEventListener('scroll', onScroll, true);
+		cleanups.push(() => document.removeEventListener('scroll', onScroll, true));
+		const onWheel = () => settle(null);
+		cm?.scrollDOM.addEventListener('wheel', onWheel, { passive: true });
+		cleanups.push(() => cm?.scrollDOM.removeEventListener('wheel', onWheel));
+
+		// Editor blur closes (set up after a tick so opening cannot trigger it).
+		const timer = window.setTimeout(() => {
+			if (settled || !cm) return;
+			cm.contentDOM.addEventListener('blur', onBlur);
+			cleanups.push(() => cm.contentDOM.removeEventListener('blur', onBlur));
+		}, 0);
+		cleanups.push(() => window.clearTimeout(timer));
+		const onBlur = () => settle(null);
+		window.addEventListener('blur', onBlur);
+		cleanups.push(() => window.removeEventListener('blur', onBlur));
 	});
-}
-
-interface Item {
-	label: string;
-	choice: PickerChoice;
-	color?: string;
-}
-
-/** Subset of SuggestModal internals used to preselect an item; absent in some versions. */
-interface HasChooser {
-	chooser?: { setSelectedItem?: (index: number, evt?: unknown) => void };
-}
-
-class SuggestColorModal extends SuggestModal<Item> {
-	private readonly items: Item[];
-	private readonly initialIndex: number;
-	private settled = false;
-
-	constructor(
-		app: App,
-		colors: readonly HighlightColor[],
-		initialIndex: number,
-		isHighlighted: boolean,
-		private readonly done: (choice: PickerChoice | null) => void,
-	) {
-		super(app);
-		this.initialIndex = initialIndex;
-		this.items = colors.map((c, index) => ({
-			label: c.name,
-			color: c.color,
-			choice: { type: 'color', index },
-		}));
-		if (isHighlighted) {
-			this.items.push({ label: 'Remove highlight', choice: { type: 'remove' } });
-		}
-		this.setPlaceholder('Choose a highlight color');
-		this.setInstructions([
-			{ command: '↑↓', purpose: 'to navigate' },
-			{ command: '↵', purpose: 'to highlight' },
-			{ command: 'esc', purpose: 'to cancel' },
-		]);
-	}
-
-	onOpen(): void {
-		super.onOpen();
-		// Best effort: move the selection to the initial color.
-		const chooser = (this as unknown as HasChooser).chooser;
-		window.setTimeout(() => chooser?.setSelectedItem?.(this.initialIndex), 0);
-	}
-
-	getSuggestions(query: string): Item[] {
-		const q = query.trim().toLowerCase();
-		return this.items.filter((item) => item.label.toLowerCase().includes(q));
-	}
-
-	renderSuggestion(item: Item, el: HTMLElement): void {
-		el.addClass('color-highlighter-suggestion');
-		if (item.color) {
-			const swatch = el.createSpan({ cls: 'color-highlighter-swatch' });
-			swatch.style.setProperty('--color-highlighter-swatch', item.color);
-		}
-		el.createSpan({ text: item.label });
-	}
-
-	onChooseSuggestion(item: Item): void {
-		this.settle(item.choice);
-	}
-
-	onClose(): void {
-		super.onClose();
-		// Obsidian closes the modal before calling onChooseSuggestion, so wait a tick.
-		window.setTimeout(() => this.settle(null), 0);
-	}
-
-	private settle(choice: PickerChoice | null): void {
-		if (this.settled) return;
-		this.settled = true;
-		this.done(choice);
-	}
 }
