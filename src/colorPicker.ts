@@ -28,7 +28,8 @@ interface CmView {
  * @param app           Obsidian app.
  * @param editor        The editor holding the selection (used to anchor the popover).
  * @param colors        The colors to offer, in order (5).
- * @param lastUsedIndex Color to focus first; also marked with a dot.
+ * @param lastUsedIndex Last-used color, marked with a dot.
+ * @param focusIndex    Color to focus first (the highlight's own color, else the last-used one).
  * @param isHighlighted True when the selection is already highlighted, so
  *                      the picker also offers "Remove highlight".
  * @param autoShown     Opened by a mouse selection: unhandled keys close the popover and
@@ -41,6 +42,7 @@ export function openColorPicker(
 	editor: Editor,
 	colors: readonly HighlightColor[],
 	lastUsedIndex: number,
+	focusIndex: number,
 	isHighlighted: boolean,
 	autoShown = false,
 	onHandle?: (close: () => void) => void,
@@ -65,6 +67,7 @@ export function openColorPicker(
 		const popover = new ColorPopover({
 			colors,
 			lastUsedIndex,
+			focusIndex,
 			showRemove: isHighlighted,
 			onChoose: (choice) => settle(choice),
 		});

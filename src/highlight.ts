@@ -228,9 +228,15 @@ const FORMAT_RE =
  * Widen [a, b) so it never cuts through a formatting marker pair: a run that
  * is only partly inside the selection (or whose marker is cut) is included whole.
  */
-function expandForMarkers(text: string, a: number, b: number): [number, number] {
-	const runs: { s: number; e: number; ml: number }[] = [];
-	const re = new RegExp(FORMAT_RE.source, 'g');
+function expandForMarkers(
+	text: string,
+	a: number,
+	b: number,
+	extra: { s: number; e: number; ml: number; always?: boolean }[] = [],
+	formatRuns = true,
+): [number, number] {
+	const runs: { s: number; e: number; ml: number; always?: boolean }[] = [...extra];
+	const re = new RegExp(formatRuns ? FORMAT_RE.source : '(?!)', 'g');
 	let m: RegExpExecArray | null;
 	while ((m = re.exec(text)) !== null) {
 		const ml = m[1] ? m[1].length : 1;
@@ -242,7 +248,7 @@ function expandForMarkers(text: string, a: number, b: number): [number, number] 
 		for (const r of runs) {
 			if (!(r.s < b && r.e > a)) continue; // no overlap
 			if (a <= r.s && b >= r.e) continue; // contains the whole run
-			if (a >= r.s + r.ml && b <= r.e - r.ml) continue; // strictly inside the content
+			if (!r.always && a >= r.s + r.ml && b <= r.e - r.ml) continue; // strictly inside the content
 			a = Math.min(a, r.s);
 			b = Math.max(b, r.e);
 			changed = true;
@@ -423,10 +429,45 @@ function linePrefixAt(text: string, offset: number): string {
 // Public edits
 // ---------------------------------------------------------------------------
 
+/** `==x==` written inside a `<mark>`: not a span of its own, but it must not be cut in two. */
+function nestedNativeRuns(
+	text: string,
+	spans: HighlightSpan[],
+): { s: number; e: number; ml: number; always: boolean }[] {
+	const out: { s: number; e: number; ml: number; always: boolean }[] = [];
+	for (const sp of spans) {
+		if (sp.kind !== 'mark') continue;
+		const re = new RegExp(NATIVE_SRC, 'g');
+		const content = text.slice(sp.contentStart, sp.contentEnd);
+		let m: RegExpExecArray | null;
+		while ((m = re.exec(content)) !== null) {
+			out.push({ s: sp.contentStart + m.index, e: sp.contentStart + m.index + m[0].length, ml: 2, always: true });
+		}
+	}
+	return out;
+}
+
 /**
- * The range that `applyHighlight` will actually wrap for the selection [from, to):
- * the selection widened over the highlights it touches and over formatting runs
- * it cuts through. Idempotent. Use it to show the user the real target range.
+ * Pull selection edges out of highlight markup. An edge inside an opening
+ * marker (`<mark ...>` / `==`) means "from the start of that highlight" for the
+ * start edge and "nothing of it" for the end edge; inside a closing marker it is
+ * the other way round.
+ */
+function snapToContent(a: number, b: number, spans: HighlightSpan[]): [number, number] {
+	for (const sp of spans) {
+		if (a > sp.start && a < sp.contentStart) a = sp.start;
+		else if (a > sp.contentEnd && a < sp.end) a = sp.end;
+		if (b > sp.start && b < sp.contentStart) b = sp.start;
+		else if (b > sp.contentEnd && b < sp.end) b = sp.end;
+	}
+	return [a, Math.max(a, b)];
+}
+
+/**
+ * The range a highlight really paints for the selection [from, to): the
+ * selection with its edges moved out of highlight markup and widened over
+ * formatting runs (`**`, `*`, `_`, `~~`, `` ` ``) it cuts into, so Markdown never
+ * breaks. It does NOT widen over other highlights (pen semantics). Idempotent.
  */
 export function highlightRange(
 	text: string,
@@ -435,18 +476,81 @@ export function highlightRange(
 	fence: Fence | null = null,
 ): [number, number] {
 	const [a, b] = normalizeRange(text, from, to);
+	if (a === b) return [a, b];
+	const spans = findHighlights(text, fence);
+	const nested = nestedNativeRuns(text, spans);
 	let start = a;
 	let end = b;
-	if (a === b) return [a, b];
-	for (let prev = -1; prev !== end - start; ) {
-		prev = end - start;
-		for (const sp of touchedSpans(text, start, end, fence)) {
-			start = Math.min(start, sp.start);
-			end = Math.max(end, sp.end);
-		}
-		[start, end] = expandForMarkers(text, start, end);
+	for (let prev = ''; prev !== `${start},${end}`; ) {
+		prev = `${start},${end}`;
+		[start, end] = snapToContent(start, end, spans);
+		[start, end] = expandForMarkers(text, start, end, nested);
 	}
 	return [start, end];
+}
+
+/** The text of [start, end) without highlight markup (native-stripped content of every overlapped span). */
+function plainInner(text: string, start: number, end: number, spans: HighlightSpan[]): string {
+	let out = '';
+	let pos = start;
+	for (const sp of spans) {
+		if (sp.start > pos) out += text.slice(pos, Math.min(sp.start, end));
+		const cs = Math.max(start, sp.contentStart);
+		const ce = Math.min(end, sp.contentEnd);
+		if (ce > cs) out += stripNative(text.slice(cs, ce));
+		pos = Math.max(pos, Math.min(end, sp.end));
+	}
+	return pos < end ? out + text.slice(pos, end) : out;
+}
+
+/** A native `==x==` that stays valid: whitespace at the inner edges moves outside. */
+function nativePiece(content: string): string {
+	const core = content.trim();
+	if (core === '') return content;
+	const lead = content.slice(0, content.indexOf(core));
+	return `${lead}==${core}==${content.slice(lead.length + core.length)}`;
+}
+
+/** What is left of a highlight after part of its content was taken away (`content` is the part that stays). */
+function remainder(text: string, span: HighlightSpan, content: string): string {
+	if (content === '') return '';
+	if (span.kind === 'native') return nativePiece(content);
+	if (content.trim() === '') return content;
+	return text.slice(span.start, span.contentStart) + content + MARK_CLOSE;
+}
+
+const normColor = (c: string | null) => (c === null ? null : c.replace(/\s/g, '').toUpperCase());
+
+/**
+ * Merge `<mark>`s of equal color that touch each other. Returns the merged text
+ * and a function mapping offsets of the input to offsets of the output.
+ */
+function mergeTouching(region: string): { text: string; map: (offset: number) => number } {
+	const spans = findHighlights(region).filter((sp) => sp.kind === 'mark');
+	const cuts: [number, number][] = [];
+	for (let i = 0; i + 1 < spans.length; i++) {
+		const x = spans[i] as HighlightSpan;
+		const y = spans[i + 1] as HighlightSpan;
+		if (x.end === y.start && x.color !== null && normColor(x.color) === normColor(y.color)) {
+			cuts.push([x.contentEnd, y.contentStart]);
+		}
+	}
+	let out = '';
+	let pos = 0;
+	for (const [from, to] of cuts) {
+		out += region.slice(pos, from);
+		pos = to;
+	}
+	out += region.slice(pos);
+	const map = (offset: number) => {
+		let removed = 0;
+		for (const [from, to] of cuts) {
+			if (offset >= to) removed += to - from;
+			else if (offset > from) removed += offset - from;
+		}
+		return offset - removed;
+	};
+	return { text: out, map };
 }
 
 /**
@@ -479,17 +583,43 @@ export function applyHighlight(
 		return { from: a, to: a, insert: tag + MARK_CLOSE, selFrom: pos, selTo: pos };
 	}
 
+	// Pen semantics: paint only [start, end); the rest of any highlight it cuts keeps its color.
 	const [start, end] = highlightRange(text, a, b, fence);
-	const spansInRange = touchedSpans(text, start, end, fence);
-	const inner = unwrap(text, start, end, spansInRange);
-	const wrapped = wrapText(inner, linePrefixAt(text, start), color);
+	if (start === end) return null;
+	const all = findHighlights(text, fence);
+	const spans = all.filter((sp) => sp.start < end && sp.end > start);
+	const wrapped = wrapText(plainInner(text, start, end, spans), linePrefixAt(text, start), color);
 	if (!wrapped.changed) return null;
+
+	const leftSpan = spans.find((sp) => sp.start < start);
+	const rightSpan = [...spans].reverse().find((sp) => sp.end > end);
+	let rs = leftSpan ? leftSpan.start : start;
+	let re = rightSpan ? rightSpan.end : end;
+	let before = leftSpan
+		? remainder(text, leftSpan, text.slice(leftSpan.contentStart, Math.max(start, leftSpan.contentStart)))
+		: '';
+	let after = rightSpan
+		? remainder(text, rightSpan, text.slice(Math.min(end, rightSpan.contentEnd), rightSpan.contentEnd))
+		: '';
+	// Touching highlights of the same color are merged into one.
+	const prev = all.find((sp) => sp.kind === 'mark' && sp.end === rs && normColor(sp.color) === normColor(color));
+	if (prev) {
+		before = text.slice(prev.start, prev.end) + before;
+		rs = prev.start;
+	}
+	const next = all.find((sp) => sp.kind === 'mark' && sp.start === re && normColor(sp.color) === normColor(color));
+	if (next) {
+		after += text.slice(next.start, next.end);
+		re = next.end;
+	}
+	const raw = before + wrapped.text + after;
+	const merged = mergeTouching(raw);
 	return {
-		from: start,
-		to: end,
-		insert: wrapped.text,
-		selFrom: start + wrapped.contentStart,
-		selTo: start + wrapped.contentEnd,
+		from: rs,
+		to: re,
+		insert: merged.text,
+		selFrom: rs + merged.map(before.length + wrapped.contentStart),
+		selTo: rs + merged.map(before.length + wrapped.contentEnd),
 	};
 }
 
@@ -505,20 +635,43 @@ export function removeHighlight(
 	fence: Fence | null = null,
 ): TextEdit | null {
 	const [a, b] = normalizeRange(text, from, to);
-	const touched = touchedSpans(text, a, b, fence);
-	if (touched.length === 0) return null;
-
-	const start = touched.reduce((m, s) => Math.min(m, s.start), Infinity);
-	const end = touched.reduce((m, s) => Math.max(m, s.end), -Infinity);
-	const insert = unwrap(text, start, end, touched);
 
 	if (a === b) {
+		// A caret removes the whole highlight it is in.
+		const touched = touchedSpans(text, a, b, fence);
+		if (touched.length === 0) return null;
 		const span = touched[0] as HighlightSpan;
+		const insert = unwrap(text, span.start, span.end, [span]);
 		const stripped = stripNative(text.slice(span.contentStart, span.contentEnd));
 		const pos = Math.min(span.start + (a - span.contentStart), span.start + stripped.length);
-		return { from: start, to: end, insert, selFrom: pos, selTo: pos };
+		return { from: span.start, to: span.end, insert, selFrom: pos, selTo: pos };
 	}
-	return { from: start, to: end, insert, selFrom: start, selTo: start + insert.length };
+
+	// Eraser: only the selected part loses its highlight; the rest keeps it.
+	const all = findHighlights(text, fence);
+	const nested = nestedNativeRuns(text, all);
+	let [start, end] = snapToContent(a, b, all);
+	[start, end] = snapToContent(...expandForMarkers(text, start, end, nested, false), all);
+	const spans = all.filter((sp) => sp.start < end && sp.end > start);
+	if (start === end || spans.length === 0) return null;
+	const leftSpan = spans.find((sp) => sp.start < start);
+	const rightSpan = [...spans].reverse().find((sp) => sp.end > end);
+	const rs = leftSpan ? leftSpan.start : start;
+	const re = rightSpan ? rightSpan.end : end;
+	const before = leftSpan
+		? remainder(text, leftSpan, text.slice(leftSpan.contentStart, Math.max(start, leftSpan.contentStart)))
+		: '';
+	const after = rightSpan
+		? remainder(text, rightSpan, text.slice(Math.min(end, rightSpan.contentEnd), rightSpan.contentEnd))
+		: '';
+	const inner = plainInner(text, start, end, spans);
+	return {
+		from: rs,
+		to: re,
+		insert: before + inner + after,
+		selFrom: rs + before.length,
+		selTo: rs + before.length + inner.length,
+	};
 }
 
 /** Apply an edit to a string (used by tests and handy for callers without an editor). */

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
 	applyEdit,
 	captureSelection,
+	pickerFocusIndex,
 	expandSelectionToTarget,
 	restoreSelection,
 	getSelectionContext,
@@ -129,17 +130,20 @@ describe('editor glue with a fake editor', () => {
 		expect(ed.sel).toEqual({ from: 0, to: 1 });
 	});
 
-	it('expands the visible selection to the real target before choosing, and apply is unchanged by it', () => {
-		const doc = `x ${'==a native highlight=='} in the middle`;
-		const from = doc.indexOf('native');
-		const to = doc.indexOf('highlight==') + 3; // ends inside the closing ==
+	it('expands the visible selection over a cut **bold** run, not over highlights; apply is unchanged by it', () => {
+		const doc = 'x **bold** y ==nat== z';
+		const from = doc.indexOf('old');
+		const to = doc.indexOf(' y');
 		const direct = new FakeEditor(doc, from, to);
 		highlightSelection(direct, YELLOW);
 		const ed = new FakeEditor(doc, from, to);
 		expect(expandSelectionToTarget(ed)).toBe(true);
-		expect(ed.sel).toEqual({ from: doc.indexOf('=='), to: doc.indexOf(' in the') });
+		expect(ed.sel).toEqual({ from: doc.indexOf('**'), to });
 		highlightSelection(ed, YELLOW);
 		expect(ed.doc).toBe(direct.doc);
+		// no widening over a highlight the selection only partly covers
+		const hl = new FakeEditor('a ==nat== b', 4, 6);
+		expect(expandSelectionToTarget(hl)).toBe(false);
 		expect(expandSelectionToTarget(new FakeEditor('plain text', 0, 5))).toBe(false);
 		expect(expandSelectionToTarget(new FakeEditor('plain', 2, 2))).toBe(false);
 	});
@@ -296,4 +300,29 @@ describe('property: multi-line selections', () => {
 			expect(checked).toBeGreaterThan(200);
 		});
 	}
+});
+
+describe('pickerFocusIndex', () => {
+	const colors = DEFAULT_COLORS;
+	const ctx = (text: string, from: number, to: number) => ({ base: 0, text, from, to, fence: null });
+	const mk = (c: string, t: string) => `<mark style="background: ${c};">${t}</mark>`;
+	it('focuses the color of the one highlight the caret or selection is in', () => {
+		const t = `a ${mk('#3DDC8455', 'green')} b`;
+		const at = t.indexOf('reen');
+		expect(pickerFocusIndex(ctx(t, at, at), colors, 0)).toBe(1);
+		expect(pickerFocusIndex(ctx(t, at, at + 2), colors, 0)).toBe(1);
+		expect(pickerFocusIndex(ctx(t, 2, t.indexOf('</mark>') + 7), colors, 3)).toBe(1); // exactly on it
+	});
+	it('matches case-insensitively', () => {
+		const t = mk('#3ddc8455', 'g');
+		expect(pickerFocusIndex(ctx(t, t.indexOf('g>') + 2, t.indexOf('g>') + 2), colors, 0)).toBe(1);
+	});
+	it('falls back to the last-used color otherwise', () => {
+		const t = `plain ${mk('#3DDC8455', 'green')} ${mk('#FF5C8A55', 'pink')} ==nat== ${mk('#123456AA', 'odd')}`;
+		expect(pickerFocusIndex(ctx(t, 0, 3), colors, 4)).toBe(4); // plain text
+		expect(pickerFocusIndex(ctx(t, 0, t.indexOf('pink')), colors, 4)).toBe(4); // starts outside
+		expect(pickerFocusIndex(ctx(t, t.indexOf('green'), t.indexOf('pink')), colors, 4)).toBe(4); // two highlights
+		expect(pickerFocusIndex(ctx(t, t.indexOf('nat'), t.indexOf('nat')), colors, 2)).toBe(2); // native has no color
+		expect(pickerFocusIndex(ctx(t, t.indexOf('odd'), t.indexOf('odd')), colors, 2)).toBe(2); // not in the palette
+	});
 });

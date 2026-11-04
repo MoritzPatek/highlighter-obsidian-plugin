@@ -7,8 +7,8 @@ Obsidian only has one built-in highlight color (`==text==`). This plugin adds mo
 ## What it does
 
 - Five colors: Yellow, Green, Blue, Pink, Purple. Names and colors can be changed in the settings; the opacity is fixed at 33% so text stays readable.
-- Highlight a selection, or recolor an existing highlight (it never stacks highlights on top of each other).
-- Converts Obsidian's native `==highlights==` when you pick a color for them.
+- Works like a highlighter pen: a new color paints only the selected text. An existing highlight keeps its color outside the selection (it is split in two if you select the middle), and highlights never stack. Click a highlight, or put the cursor in it, to recolor the whole thing.
+- Native `==highlights==` keep working: the part you select becomes a colored highlight, the rest stays a native one.
 - Remove a highlight and keep the text.
 - Remembers the last color you used.
 - Works on desktop and mobile.
@@ -62,14 +62,14 @@ All commands are in the command palette (Cmd+P) under "Color Highlighter".
 - A highlight is stored as `<mark style="background: #FFD60A55;">text</mark>`. The color is part of the text, so it still shows if the plugin is turned off.
 - With nothing selected, you get the notice "Select some text to highlight." If the cursor is inside an existing highlight, that highlight is the target.
 - Code is never highlighted: inside inline code or code blocks you get the notice "Can't highlight inside code." Native `==` only counts as a highlight when there is no space after the opening or before the closing `==` (so `a == b` is left alone).
-- A selection that cuts through bold, italic, strikethrough or code markers is widened to include the whole formatted run.
+- A selection that cuts through bold, italic, strikethrough or code markers is widened to include the whole formatted run. The picker starts on the color of the highlight you clicked (when it is one of your five colors), otherwise on the last color you used.
 - Colors are always applied at 33% opacity so text stays readable. You can change each color and name in the plugin settings.
-- Selecting part of a highlight recolors or removes the whole highlight.
+- "Remove highlight" is an eraser: with part of a highlight selected it only unwraps that part. With just the cursor in it, or after clicking it, the whole highlight goes. Touching highlights of the same color are merged.
 - Selections that span several lines are highlighted line by line (a highlight cannot cross a paragraph break and still render). Blank lines are skipped.
 - List bullets, numbers, checkboxes, quote markers and heading markers stay outside the highlight, so lists, tasks and headings keep working. In tables, each cell is highlighted on its own.
 - Only the first cursor is used if you have several.
 - After a highlight is applied the caret sits just after it, so it renders at once. At the very end of a note there is nothing after it, so Live Preview keeps showing the `<mark …>` source until you click elsewhere or press Enter.
-- Clicking an already colored highlight opens the picker (with auto-show on), so you can switch its color or remove it. Before you choose, the selection is widened to the whole highlight or formatted run that will be marked.
+- Clicking an already colored highlight opens the picker (with auto-show on), so you can switch its color or remove it. Before you choose, a selection that cuts through bold, italic or similar formatting grows to include the whole run, so Markdown never breaks.
 - Code is left alone: highlighting or removing inside inline code or fenced code blocks (``` or ~~~) is refused with a notice. Indented code blocks are not detected.
 
 ## Hotkey

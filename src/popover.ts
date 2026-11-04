@@ -12,6 +12,8 @@ export interface PopoverOptions {
 	colors: readonly HighlightColor[];
 	/** Color that is focused first and marked with a dot. */
 	lastUsedIndex: number;
+	/** Item focused first (defaults to the last-used color). */
+	focusIndex?: number;
 	/** Show the "Remove highlight" item. */
 	showRemove: boolean;
 	onChoose: (choice: PopoverChoice) => void;
@@ -75,7 +77,7 @@ export class ColorPopover {
 		el.addEventListener('mousedown', (e) => e.preventDefault());
 		this.items.forEach((it, i) => it.el.addEventListener('click', () => this.choose(i)));
 
-		this.setActive(clampIndex(opts.lastUsedIndex, opts.colors.length));
+		this.setActive(clampIndex(opts.focusIndex ?? opts.lastUsedIndex, opts.colors.length));
 	}
 
 	/** Append to the document, position and show. */

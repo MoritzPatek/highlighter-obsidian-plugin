@@ -7,6 +7,7 @@ import {
 	applyHighlight,
 	endsInsideFence,
 	getHighlightState,
+	findHighlights,
 	highlightRange,
 	removeHighlight,
 	selectionTouchesCode,
@@ -162,4 +163,28 @@ export function expandSelectionToTarget(editor: EditorLike): boolean {
 	if (s === ctx.from && e === ctx.to) return false;
 	editor.setSelection(editor.offsetToPos(ctx.base + s), editor.offsetToPos(ctx.base + e));
 	return true;
+}
+
+/**
+ * Which palette color the picker should focus first. When the selection or caret
+ * is inside exactly ONE existing highlight whose color is a palette color, that
+ * color; otherwise the last-used color. Never the Remove item.
+ */
+export function pickerFocusIndex(
+	ctx: SelectionContext,
+	colors: readonly { color: string }[],
+	lastUsedIndex: number,
+): number {
+	const norm = (c: string) => c.replace(/\s/g, '').toUpperCase();
+	const touched = findHighlights(ctx.text, ctx.fence).filter((sp) =>
+		ctx.from === ctx.to
+			? sp.start <= ctx.from && ctx.from <= sp.end
+			: sp.start < ctx.to && sp.end > ctx.from,
+	);
+	const only = touched.length === 1 ? touched[0] : undefined;
+	if (only && only.color && ctx.from >= only.start && ctx.to <= only.end) {
+		const i = colors.findIndex((c) => norm(c.color) === norm(only.color as string));
+		if (i >= 0) return i;
+	}
+	return lastUsedIndex;
 }

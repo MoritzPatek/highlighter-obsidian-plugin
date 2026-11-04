@@ -26,8 +26,8 @@ function apply(text: string, sel: string, color = Y) {
 	return { out: applyEdit(text, edit), edit };
 }
 
-function remove(text: string, sel: string) {
-	const from = text.indexOf(sel);
+function remove(text: string, sel: string, last = false) {
+	const from = last ? text.lastIndexOf(sel) : text.indexOf(sel);
 	const edit = removeHighlight(text, from, from + sel.length);
 	return edit ? applyEdit(text, edit) : null;
 }
@@ -113,9 +113,9 @@ describe('applyHighlight: recolor, never nest', () => {
 		expect(out).toBe(`before ${mark('target', G)} after`);
 	});
 
-	it('recolors the whole mark when the selection is a part of the content', () => {
+	it('paints only the selected part of a mark (pen): the rest keeps its color', () => {
 		const { out } = apply(`x ${mark('two words')} y`, 'words', G);
-		expect(out).toBe(`x ${mark('two words', G)} y`);
+		expect(out).toBe(`x ${mark('two ')}${mark('words', G)} y`);
 	});
 
 	it('recoloring with the same color is stable', () => {
@@ -123,11 +123,11 @@ describe('applyHighlight: recolor, never nest', () => {
 		expect(out).toBe(text);
 	});
 
-	it('merges a selection that partially overlaps a mark', () => {
+	it('splits a mark that the selection only partly covers', () => {
 		const t = `aa ${mark('bb cc')} dd`;
 		// Selection runs from the start of "aa" into the middle of the mark's content.
 		const edit = applyHighlight(t, 0, t.indexOf('bb') + 2, G) as TextEdit;
-		expect(applyEdit(t, edit)).toBe(`${mark('aa bb cc', G)} dd`);
+		expect(applyEdit(t, edit)).toBe(`${mark('aa bb', G)}${mark(' cc')} dd`);
 	});
 
 	it('merges several marks covered by one selection', () => {
@@ -142,9 +142,9 @@ describe('applyHighlight: recolor, never nest', () => {
 		expect(out).toBe(`${mark('a')}${mark('bc', G)}`);
 	});
 
-	it('removes native markers nested inside a mark', () => {
+	it('never cuts a ==native== written inside a mark: it is painted as a whole', () => {
 		const { out } = apply(`<mark>x ==y== z</mark>`, 'y', G);
-		expect(out).toBe(mark('x y z', G));
+		expect(out).toBe(`<mark>x </mark>${mark('y', G)}<mark> z</mark>`);
 	});
 
 	it('handles a bare <mark>', () => {
@@ -159,8 +159,18 @@ describe('applyHighlight: native ==x== conversion', () => {
 		expect(out).toBe(`see ${mark('this')} now`);
 	});
 
-	it('converts when the selection is the content', () => {
+	it('paints only the selected part of a native highlight; the rest stays a valid native', () => {
 		const { out } = apply('see ==this one== now', 'this');
+		expect(out).toBe(`see ${mark('this')} ==one== now`);
+	});
+
+	it('keeps whitespace out of the remaining native pieces', () => {
+		const { out } = apply('==a b c==', 'b');
+		expect(out).toBe(`==a== ${mark('b')} ==c==`);
+	});
+
+	it('converts when the selection is the whole native content', () => {
+		const { out } = apply('see ==this one== now', 'this one');
 		expect(out).toBe(`see ${mark('this one')} now`);
 	});
 
@@ -238,10 +248,10 @@ describe('applyHighlight: multi-line', () => {
 		expect(out.slice(edit.selFrom, edit.selTo)).toBe(`a${'</mark>'}\n${'<mark style="background: ' + Y + ';">'}b`);
 	});
 
-	it('recolors a user-written mark that spans lines by re-wrapping per line', () => {
+	it('paints one line of a user-written mark that spans lines and keeps the rest', () => {
 		const t = `<mark>one\ntwo</mark>`;
 		const { out } = apply(t, 'one', G);
-		expect(out).toBe(`${mark('one', G)}\n${mark('two', G)}`);
+		expect(out).toBe(`${mark('one', G)}<mark>\ntwo</mark>`);
 	});
 });
 
@@ -323,15 +333,16 @@ describe('applyHighlight: special characters', () => {
 
 describe('removeHighlight', () => {
 	it('unwraps a mark when the content is selected', () => {
-		expect(remove(`a ${mark('b')} c`, 'b')).toBe('a b c');
+		expect(remove(`a ${mark('b')} c`, 'b', true)).toBe('a b c');
 	});
 
 	it('unwraps a mark when the tags are selected too', () => {
 		expect(remove(`a ${mark('b')} c`, mark('b'))).toBe('a b c');
 	});
 
-	it('unwraps the whole mark when part of the content is selected', () => {
-		expect(remove(`a ${mark('two words')} c`, 'words')).toBe('a two words c');
+	it('erases only the selected part of a mark (eraser)', () => {
+		expect(remove(`a ${mark('two words')} c`, 'words')).toBe(`a ${mark('two ')}words c`);
+		expect(remove(`a ${mark('two words')} c`, 'two')).toBe(`a two${mark(' words')} c`);
 	});
 
 	it('unwraps a native highlight', () => {
@@ -345,7 +356,18 @@ describe('removeHighlight', () => {
 
 	it('leaves unrelated highlights alone', () => {
 		const t = `${mark('a')} ${mark('b', G)}`;
-		expect(remove(t, 'a')).toBe(`a ${mark('b', G)}`);
+		const at = t.indexOf('>a<') + 1;
+		expect(applyEdit(t, removeHighlight(t, at, at + 1) as TextEdit)).toBe(`a ${mark('b', G)}`);
+	});
+
+	it('erases the middle of a native highlight and keeps both sides valid', () => {
+		expect(remove('==a b c==', 'b')).toBe('==a== b ==c==');
+	});
+
+	it('a caret still removes the whole highlight', () => {
+		const t = `x ${mark('two words')} y`;
+		const at = t.indexOf('words');
+		expect(applyEdit(t, removeHighlight(t, at, at) as TextEdit)).toBe('x two words y');
 	});
 
 	it('returns null when nothing is highlighted', () => {
@@ -362,8 +384,9 @@ describe('removeHighlight', () => {
 		expect(out.slice(edit.selFrom, edit.selFrom + 3)).toBe('llo');
 	});
 
-	it('strips native markers nested in a removed mark', () => {
-		expect(remove('<mark>x ==y== z</mark>', 'x')).toBe('x y z');
+	it('erasing next to a ==native== written inside a mark keeps it intact', () => {
+		expect(remove('<mark>x ==y== z</mark>', 'x')).toBe('x<mark> ==y== z</mark>');
+		expect(remove('<mark>x ==y== z</mark>', 'y')).toBe('<mark>x </mark>y<mark> z</mark>');
 	});
 
 	it('is the inverse of apply for a simple selection', () => {
@@ -534,5 +557,161 @@ describe('highlightRange', () => {
 	it('leaves caret and plain selections alone', () => {
 		expect(highlightRange('plain text', 2, 2)).toEqual([2, 2]);
 		expect(highlightRange('plain text', 2, 5)).toEqual([2, 5]);
+	});
+});
+
+describe('pen semantics: split, merge, absorb, eraser', () => {
+	const P = '#FF5C8A55';
+	const Yw = '#FFD60A55';
+	it('splits a mark when the selection covers part of it (owner example)', () => {
+		const t = mark('yellow highlight', Yw);
+		const { out } = apply(t.replace('yellow', 'yellow'), 'low hi', P);
+		expect(out).toBe(`${mark('yel', Yw)}${mark('low hi', P)}${mark('ghlight', Yw)}`);
+	});
+	it('replaces the color when the whole mark is selected, and never nests', () => {
+		const t = mark('abc', Yw);
+		expect(apply(t, t, P).out).toBe(mark('abc', P));
+		expect(apply(t, 'abc', P).out).toBe(mark('abc', P));
+	});
+	it('merges touching marks of the same color', () => {
+		const t = `${mark('yel', Yw)}low`;
+		const { out } = apply(t, 'low', Yw);
+		expect(out).toBe(mark('yellow', Yw));
+		// partial recolor with the same color is a no-op in effect
+		const same = mark('yellow highlight', Yw);
+		expect(apply(same, 'low hi', Yw).out).toBe(same);
+	});
+	it('merges with a same-color neighbor on the other side too', () => {
+		const t = `ab${mark('cd', Yw)}`;
+		expect(apply(t, 'ab', Yw).out).toBe(mark('abcd', Yw));
+	});
+	it('absorbs highlights that lie entirely inside the selection', () => {
+		const t = `a ${mark('b', Yw)} c ==d== e`;
+		const { out } = apply(t, t, P);
+		expect(out).toBe(mark('a b c d e', P));
+	});
+	it('paints across two marks: partial left, whole middle, partial right', () => {
+		const t = `${mark('aa bb', Yw)} ${mark('cc dd', '#3DDC8455')}`;
+		const from = t.indexOf('bb');
+		const to = t.indexOf('cc') + 2;
+		const edit = applyHighlight(t, from, to, P) as TextEdit;
+		expect(applyEdit(t, edit)).toBe(
+			`${mark('aa ', Yw)}${mark('bb cc', P)}${mark(' dd', '#3DDC8455')}`,
+		);
+	});
+	it('splits a native highlight into valid natives and marks', () => {
+		expect(apply('==a b c==', 'b', P).out).toBe(`==a== ${mark('b', P)} ==c==`);
+		expect(apply('==abc==', 'b', P).out).toBe(`==a==${mark('b', P)}==c==`);
+	});
+	it('a caret inside a mark still recolors the whole mark', () => {
+		const t = mark('abc', Yw);
+		const at = t.indexOf('bc');
+		expect(applyEdit(t, applyHighlight(t, at, at, P) as TextEdit)).toBe(mark('abc', P));
+	});
+	it('eraser: selecting inside a mark unwraps only that part', () => {
+		const t = mark('yellow highlight', Yw);
+		const from = t.indexOf('low hi');
+		const edit = removeHighlight(t, from, from + 6) as TextEdit;
+		expect(applyEdit(t, edit)).toBe(`${mark('yel', Yw)}low hi${mark('ghlight', Yw)}`);
+		expect(applyEdit(t, edit).slice(edit.selFrom, edit.selTo)).toBe('low hi');
+	});
+	it('eraser: a selection spanning the end of one mark and the start of the next', () => {
+		const t = `${mark('aa bb', Yw)} ${mark('cc dd', P)}`;
+		const from = t.indexOf('bb');
+		const to = t.indexOf('cc') + 2;
+		expect(applyEdit(t, removeHighlight(t, from, to) as TextEdit)).toBe(
+			`${mark('aa ', Yw)}bb cc${mark(' dd', P)}`,
+		);
+	});
+	it('eraser: the whole mark (e.g. after clicking it) is removed completely', () => {
+		const t = `x ${mark('abc', Yw)} y`;
+		const from = t.indexOf('<mark');
+		expect(applyEdit(t, removeHighlight(t, from, t.indexOf('</mark>') + 7) as TextEdit)).toBe('x abc y');
+	});
+	it('highlightRange no longer widens over highlights', () => {
+		const t = `a ${mark('bcd', Yw)} e`;
+		const at = t.indexOf('cd');
+		expect(highlightRange(t, at, at + 2)).toEqual([at, at + 2]);
+	});
+	it('edges inside the tag markup count as "from the start" / "nothing of it"', () => {
+		const t = `a ${mark('bcd', Yw)} e`;
+		const inTag = t.indexOf('<mark') + 3;
+		const edit = applyHighlight(t, inTag, t.indexOf('cd') + 1, P) as TextEdit;
+		expect(applyEdit(t, edit)).toBe(`a ${mark('bc', P)}${mark('d', Yw)} e`);
+	});
+});
+
+describe('property: pen semantics keep every other character\'s color', () => {
+	const colorMap = (text: string): { ch: string; color: string }[] => {
+		const out: { ch: string; color: string }[] = [];
+		const spans = findHighlights(text);
+		let i = 0;
+		while (i < text.length) {
+			const sp = spans.find((s) => s.start <= i && i < s.end);
+			if (!sp) {
+				out.push({ ch: text.charAt(i), color: '' });
+				i++;
+			} else if (i < sp.contentStart || i >= sp.contentEnd) {
+				i++; // markup
+			} else {
+				out.push({ ch: text.charAt(i), color: sp.color ? sp.color.toUpperCase() : 'native' });
+				i++;
+			}
+		}
+		return out;
+	};
+	/** Number of visible (non-markup) characters before `offset` in `text`. */
+	const plainIdx = (text: string, offset: number): number => {
+		const spans = findHighlights(text);
+		let n = 0;
+		for (let i = 0; i < Math.min(offset, text.length); i++) {
+			const sp = spans.find((x) => x.start <= i && i < x.end);
+			if (!sp || (i >= sp.contentStart && i < sp.contentEnd)) n++;
+		}
+		return n;
+	};
+	const lines = [
+		'This sentence has ==a native highlight== in the middle. Here is ==another one== and ==a third native highlight==. Obsidian only offers this one yellow color.',
+		`This one is ${mark('already yellow', '#FFF3A3A6')}, this one is ${mark('already green', '#BBFABBA6')}, and this phrase ${mark('is blue and has several words', '#ADCCFFA6')} so you can select part of it.`,
+		`plain ${mark('one', '#FFD60A55')}${mark('two', '#3DDC8455')} plain ==x y z== end`,
+	];
+	it('applies and erases without changing the plain text or colors outside the target range', () => {
+		let checked = 0;
+		for (const line of lines) {
+			for (let f = 0; f < line.length; f += 4) {
+				for (let t = f + 1; t <= line.length; t += 7) {
+					const range = highlightRange(line, f, t);
+					const before = colorMap(line);
+					const edit = applyHighlight(line, f, t, '#FF5C8A55');
+					if (edit) {
+						const out = applyEdit(line, edit);
+						const after = colorMap(out);
+						expect(after.map((c) => c.ch).join('')).toBe(before.map((c) => c.ch).join(''));
+						// plain-text index range of the target
+						const lo = plainIdx(line, range[0]);
+						const hi = plainIdx(line, range[1]);
+						before.forEach((c, i) => {
+							if ((i < lo || i >= hi) && c.ch.trim() !== '') expect(after[i]?.color, `${line.slice(f, t)} @${i}`).toBe(c.color);
+							else if (i >= lo && i < hi && c.ch.trim() !== '') expect(after[i]?.color, `${line.slice(f, t)} @${i}`).toBe('#FF5C8A55');
+						});
+						checked++;
+					}
+					const er = removeHighlight(line, f, t);
+					if (er) {
+						const out = applyEdit(line, er);
+						const after = colorMap(out);
+						expect(after.map((c) => c.ch).join('')).toBe(before.map((c) => c.ch).join(''));
+						const selLo = plainIdx(line, f);
+						const selHi = plainIdx(line, t);
+						before.forEach((c, i) => {
+							// characters outside the selection keep their color (a cut highlight keeps it too)
+							if ((i < selLo || i >= selHi) && c.ch.trim() !== '') expect(after[i]?.color, `erase ${line.slice(f, t)} @${i}`).toBe(c.color);
+						});
+						checked++;
+					}
+				}
+			}
+		}
+		expect(checked).toBeGreaterThan(100);
 	});
 });

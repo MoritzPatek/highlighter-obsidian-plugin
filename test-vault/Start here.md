@@ -27,7 +27,7 @@ Select the word **banana** in this line: I would like a banana today.
 - [ ] Select with Shift+arrows or Cmd+A: no popover appears (Cmd+H still opens it).
 - [ ] Click an already colored highlight: the picker opens, with the dashed X. Pick another color: the highlight changes. A click on other inline HTML (for example a `<kbd>`) does not open it.
 - [ ] After choosing a color the caret sits just after the highlight and the highlight renders at once (no raw `<mark ...>` text), also when an emoji or accented letter follows it. Exception: at the very end of the note the `<mark>` source shows until you click elsewhere or press Enter.
-- [ ] Drag across part of a `==native==` highlight (or a `**bold**` word): before you choose, the selection grows to cover the whole highlight or bold run that will be marked.
+- [ ] Drag across part of a `**bold**` word: before you choose, the selection grows to cover the whole bold run. Dragging over part of a highlight does NOT grow the selection (pen: only what you select is painted).
 - [ ] Dragging a new selection moves the popover to the new place. Clicking elsewhere closes it.
 - [ ] Settings -> Color Highlighter -> "Show picker when selecting text" off: selecting with the mouse no longer opens it. Cmd+H still does.
 
@@ -35,10 +35,11 @@ Select the word **banana** in this line: I would like a banana today.
 - [ ] In a line like `if (a == b && c == d)`, select `b` and highlight: both `==` stay.
 - [ ] In `**bold** text`, select from inside the bold word into "text" and highlight: the `**` pair stays intact inside one highlight.
 
-## 2. Recolor, never nest
+## 2. Pen: paint, split, recolor, never nest
 
 - [ ] Click the highlighted word, pick another color in the picker (or press Cmd+H after clicking it). The color changes. Switch the note to source mode (Cmd+P, "Toggle Live Preview/Source mode"): there is only ONE `<mark ...>` around the word, not two.
-- [ ] Select only part of a highlighted phrase and pick a color. The whole phrase takes the new color.
+- [ ] Drag over the middle of a highlighted phrase and pick another color. Only the selected part changes; the pieces on both sides keep the old color (source mode: three `<mark>`s, none nested). Picking the phrase's own color changes nothing visible and leaves one `<mark>`.
+- [ ] Click a colored highlight: the picker opens with that color already focused (if it is one of the five). Pick another: the whole highlight changes.
 - [ ] Select from plain text into a highlighted phrase and pick a color. Everything becomes one highlight.
 
 ## 3. Remove
@@ -51,9 +52,9 @@ Select the word **banana** in this line: I would like a banana today.
 
 Open [[Sample text]]. It contains ==native highlights==.
 
-- [ ] Select a ==native== highlight (with or without the `==`), pick a color. It turns into a colored `<mark>`, no `==` left behind.
+- [ ] Select a whole ==native== highlight (with the `==` or just its words), pick a color. It turns into a colored `<mark>`, no `==` left behind. Select only the middle words: those become a colored `<mark>`, the rest stays `==native==` (spaces never sit next to the `==`).
 - [ ] Put the cursor inside a native highlight, with nothing selected, and pick a color. It converts too.
-- [ ] "Remove highlight" on a native highlight removes the `==` markers.
+- [ ] "Remove highlight" with the cursor in a native highlight removes its `==` markers. With part of it selected, only that part is unwrapped (eraser).
 
 ## 5. Empty selection
 
