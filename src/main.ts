@@ -1,6 +1,13 @@
 import { Editor, MarkdownView, Notice, Platform, Plugin } from 'obsidian';
 import { openColorPicker } from './colorPicker';
-import { applyHighlight, getHighlightState, removeHighlight, type TextEdit } from './highlight';
+import {
+	applyHighlight,
+	getHighlightState,
+	removeHighlight,
+	endsInsideFence,
+	selectionTouchesCode,
+	type TextEdit,
+} from './highlight';
 import { shouldAutoShow } from './pickerLogic';
 import { ColorHighlighterSettingTab } from './settingsTab';
 import {
@@ -16,6 +23,8 @@ interface SelectionContext {
 	text: string;
 	from: number;
 	to: number;
+	/** The selection starts inside a fenced code block opened above. */
+	fenceOpen: boolean;
 }
 
 export default class ColorHighlighterPlugin extends Plugin {
@@ -49,9 +58,16 @@ export default class ColorHighlighterPlugin extends Plugin {
 
 		this.addSettingTab(new ColorHighlighterSettingTab(this.app, this));
 		this.registerAutoShow();
+		this.register(() => this.closePicker?.());
+	}
+
+	onunload() {
+		this.closePicker?.();
 	}
 
 	private pickerOpen = false;
+	/** Closes the open picker (if any) without a choice. */
+	private closePicker: (() => void) | null = null;
 	private composing = false;
 	private autoTimer: number | null = null;
 
@@ -124,6 +140,7 @@ export default class ColorHighlighterPlugin extends Plugin {
 
 	private async highlightWithPicker(editor: Editor, auto = false) {
 		const ctx = this.getSelectionContext(editor);
+		if (this.refuseInCode(ctx, auto)) return;
 		const state = getHighlightState(ctx.text, ctx.from, ctx.to);
 		// Nothing selected and the caret is not inside a highlight: nothing to color.
 		if (!auto && ctx.from === ctx.to && !state.highlighted) {
@@ -142,9 +159,11 @@ export default class ColorHighlighterPlugin extends Plugin {
 				this.settings.lastUsedIndex,
 				state.highlighted,
 				auto,
+				(close) => (this.closePicker = close),
 			);
 		} finally {
 			this.pickerOpen = false;
+			this.closePicker = null;
 		}
 		if (!choice) return;
 		if (choice.type === 'remove') {
@@ -159,6 +178,7 @@ export default class ColorHighlighterPlugin extends Plugin {
 		if (!color) return;
 		// Re-read the selection: it may have changed while the picker was open.
 		const ctx = this.getSelectionContext(editor);
+		if (this.refuseInCode(ctx, false)) return;
 		this.applyEdit(editor, ctx, applyHighlight(ctx.text, ctx.from, ctx.to, color.color));
 		this.settings.lastUsedIndex = index;
 		await this.saveSettings();
@@ -167,6 +187,13 @@ export default class ColorHighlighterPlugin extends Plugin {
 	private removeSelectionHighlight(editor: Editor) {
 		const ctx = this.getSelectionContext(editor);
 		this.applyEdit(editor, ctx, removeHighlight(ctx.text, ctx.from, ctx.to));
+	}
+
+	/** Code is never highlighted. Returns true (with a notice unless `quiet`) when the selection touches code. */
+	private refuseInCode(ctx: SelectionContext, quiet: boolean): boolean {
+		if (!selectionTouchesCode(ctx.text, ctx.from, ctx.to, ctx.fenceOpen)) return false;
+		if (!quiet) new Notice("Can't highlight inside code.");
+		return true;
 	}
 
 	/**
@@ -184,6 +211,7 @@ export default class ColorHighlighterPlugin extends Plugin {
 			text: editor.getRange(startPos, endPos),
 			from: editor.posToOffset(a) - base,
 			to: editor.posToOffset(b) - base,
+			fenceOpen: endsInsideFence(editor.getRange({ line: 0, ch: 0 }, startPos)),
 		};
 	}
 

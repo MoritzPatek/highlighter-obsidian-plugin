@@ -85,11 +85,18 @@ export function buildMark(text: string, color: string): string {
 	return `${openTag(color)}${text}${MARK_CLOSE}`;
 }
 
+/**
+ * Native `==x==` (Obsidian's rule): no whitespace right after the opener or
+ * right before the closer, so `a == b && c == d` is not a highlight.
+ */
+const NATIVE_SRC = '==(?![\\s=])((?:(?!==)[^\\n])*?(?<![\\s]))==';
+
 function spanRegex(): RegExp {
 	// Group 1: color of a <mark>. Group 2: <mark> content. Group 3: native content.
 	return new RegExp(
 		'<mark(?:\\s+style="\\s*background(?:-color)?\\s*:\\s*([^";<>]*?)\\s*;?\\s*")?\\s*>([\\s\\S]*?)</mark>' +
-			'|==(?!=)((?:(?!==)[^\\n])+)==',
+			'|' +
+			NATIVE_SRC,
 		'gi',
 	);
 }
@@ -98,9 +105,11 @@ function spanRegex(): RegExp {
 export function findHighlights(text: string): HighlightSpan[] {
 	const spans: HighlightSpan[] = [];
 	const re = spanRegex();
+	const code = codeRanges(text);
 	let m: RegExpExecArray | null;
 	while ((m = re.exec(text)) !== null) {
 		const start = m.index;
+		if (code.some((r) => start >= r.start && start < r.end)) continue; // never inside code
 		const end = start + m[0].length;
 		if (m[3] !== undefined) {
 			spans.push({
@@ -119,6 +128,103 @@ export function findHighlights(text: string): HighlightSpan[] {
 		}
 	}
 	return spans;
+}
+
+// ---------------------------------------------------------------------------
+// Code and formatting markers
+// ---------------------------------------------------------------------------
+
+interface Range {
+	start: number;
+	end: number;
+	fenced: boolean;
+}
+
+/** Fenced blocks and inline code spans in `text`. An unclosed fence runs to the end. */
+export function codeRanges(text: string, fenceOpen = false): Range[] {
+	const out: Range[] = [];
+	let pos = 0;
+	let fenceStart = fenceOpen ? 0 : -1;
+	for (const line of text.split('\n')) {
+		const lineEnd = pos + line.length;
+		if (/^\s*(?:```|~~~)/.test(line)) {
+			if (fenceStart < 0) fenceStart = pos;
+			else {
+				out.push({ start: fenceStart, end: lineEnd, fenced: true });
+				fenceStart = -1;
+			}
+		} else if (fenceStart < 0) {
+			const re = /(`+)(?!`)[^\n]*?(?<!`)\1(?!`)/g;
+			let m: RegExpExecArray | null;
+			while ((m = re.exec(line)) !== null) {
+				out.push({ start: pos + m.index, end: pos + m.index + m[0].length, fenced: false });
+			}
+		}
+		pos = lineEnd + 1;
+	}
+	if (fenceStart >= 0) out.push({ start: fenceStart, end: text.length, fenced: true });
+	return out;
+}
+
+/** True when `text` (the document before some point) ends inside an open fenced code block. */
+export function endsInsideFence(textBefore: string): boolean {
+	let open = false;
+	for (const line of textBefore.split('\n')) {
+		if (/^\s*(?:```|~~~)/.test(line)) open = !open;
+	}
+	return open;
+}
+
+/**
+ * Would highlighting [from, to) touch code? True when an edge of the selection
+ * is inside an inline code span, the selection overlaps a fenced block, or the
+ * selection starts inside a fence opened before `text`.
+ */
+export function selectionTouchesCode(
+	text: string,
+	from: number,
+	to: number,
+	fenceOpen = false,
+): boolean {
+	const [a, b] = normalizeRange(text, from, to);
+	return codeRanges(text, fenceOpen).some((r) =>
+		r.fenced
+			? a === b
+				? a >= r.start && a <= r.end
+				: r.start < b && r.end > a
+			: (a > r.start && a < r.end) || (b > r.start && b < r.end),
+	);
+}
+
+/** Formatting runs on one line: code, bold, strike, italic. `ml` is the marker length. */
+const FORMAT_RE =
+	/`[^`\n]+`|(\*\*|__|~~)(?!\s)[^\n]*?(?<!\s)\1|(?<![*\w])\*(?![\s*])[^\n*]*?(?<![\s*])\*(?!\*)|(?<![\w])_(?![\s_])[^\n_]*?(?<![\s_])_(?!\w)/g;
+
+/**
+ * Widen [a, b) so it never cuts through a formatting marker pair: a run that
+ * is only partly inside the selection (or whose marker is cut) is included whole.
+ */
+function expandForMarkers(text: string, a: number, b: number): [number, number] {
+	const runs: { s: number; e: number; ml: number }[] = [];
+	const re = new RegExp(FORMAT_RE.source, 'g');
+	let m: RegExpExecArray | null;
+	while ((m = re.exec(text)) !== null) {
+		const ml = m[1] ? m[1].length : 1;
+		runs.push({ s: m.index, e: m.index + m[0].length, ml });
+	}
+	let changed = true;
+	while (changed) {
+		changed = false;
+		for (const r of runs) {
+			if (!(r.s < b && r.e > a)) continue; // no overlap
+			if (a <= r.s && b >= r.e) continue; // contains the whole run
+			if (a >= r.s + r.ml && b <= r.e - r.ml) continue; // strictly inside the content
+			a = Math.min(a, r.s);
+			b = Math.max(b, r.e);
+			changed = true;
+		}
+	}
+	return [a, b];
 }
 
 function normalizeRange(text: string, from: number, to: number): [number, number] {
@@ -150,7 +256,7 @@ export function getHighlightState(text: string, from: number, to: number): Highl
 
 /** Remove native `==x==` markers and return the plain content. */
 function stripNative(s: string): string {
-	return s.replace(/==(?!=)((?:(?!==)[^\n])+)==/g, (_m, inner: string) => inner);
+	return s.replace(new RegExp(NATIVE_SRC, 'g'), (_m, inner: string) => inner);
 }
 
 /** Text of [start, end) with every given span replaced by its (native-stripped) content. */
@@ -312,9 +418,19 @@ export function applyHighlight(
 		return { from: a, to: a, insert: tag + MARK_CLOSE, selFrom: pos, selTo: pos };
 	}
 
-	const start = touched.reduce((m, s) => Math.min(m, s.start), a);
-	const end = touched.reduce((m, s) => Math.max(m, s.end), b);
-	const inner = unwrap(text, start, end, touched);
+	// Widen over touched highlights and cut formatting markers until stable.
+	let start = a;
+	let end = b;
+	for (let prev = -1; prev !== end - start; ) {
+		prev = end - start;
+		for (const sp of touchedSpans(text, start, end)) {
+			start = Math.min(start, sp.start);
+			end = Math.max(end, sp.end);
+		}
+		[start, end] = expandForMarkers(text, start, end);
+	}
+	const spansInRange = touchedSpans(text, start, end);
+	const inner = unwrap(text, start, end, spansInRange);
 	const wrapped = wrapText(inner, linePrefixAt(text, start), color);
 	if (!wrapped.changed) return null;
 	return {

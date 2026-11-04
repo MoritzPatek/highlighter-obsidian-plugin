@@ -4,13 +4,9 @@ Highlight text in Obsidian in five colors. Select text, press your hotkey for "P
 
 Obsidian only has one built-in highlight color (`==text==`). This plugin adds more, and the highlights are plain HTML, so they show up in both Reading view and Live Preview.
 
-![Color Highlighter demo](docs/demo.gif)
-
-<!-- TODO: record a short GIF of select -> Cmd+H -> pick color and save it as docs/demo.gif -->
-
 ## What it does
 
-- Five colors: Yellow, Green, Blue, Pink, Purple. Names, colors and opacity can be changed in the settings.
+- Five colors: Yellow, Green, Blue, Pink, Purple. Names and colors can be changed in the settings; the opacity is fixed at 33% so text stays readable.
 - Highlight a selection, or recolor an existing highlight (it never stacks highlights on top of each other).
 - Converts Obsidian's native `==highlights==` when you pick a color for them.
 - Remove a highlight and keep the text.
@@ -65,6 +61,8 @@ All commands are in the command palette (Cmd+P) under "Color Highlighter".
 
 - A highlight is stored as `<mark style="background: #FFD60A55;">text</mark>`. The color is part of the text, so it still shows if the plugin is turned off.
 - With nothing selected, you get the notice "Select some text to highlight." If the cursor is inside an existing highlight, that highlight is the target.
+- Code is never highlighted: inside inline code or code blocks you get the notice "Can't highlight inside code." Native `==` only counts as a highlight when there is no space after the opening or before the closing `==` (so `a == b` is left alone).
+- A selection that cuts through bold, italic, strikethrough or code markers is widened to include the whole formatted run.
 - Colors are always applied at 33% opacity so text stays readable. You can change each color and name in the plugin settings.
 - Selecting part of a highlight recolors or removes the whole highlight.
 - Selections that span several lines are highlighted line by line (a highlight cannot cross a paragraph break and still render). Blank lines are skipped.
@@ -97,8 +95,8 @@ The highlight logic is in `src/highlight.ts` (pure functions, no Obsidian import
 
 ### Releasing
 
-1. Update `version` in `package.json`, then run `npm version <x.y.z>` (this updates `manifest.json` and `versions.json`; tags have no `v` prefix).
-2. `git push origin main --follow-tags`.
+1. Run `npm version <x.y.z>`. It bumps `package.json`, runs `version-bump.mjs` (updates `manifest.json` and `versions.json`), then commits and tags. `.npmrc` sets an empty tag prefix, so the tag is `x.y.z` without `v`.
+2. `git push --follow-tags`.
 3. The "Release" workflow builds, tests and creates a GitHub release with `main.js`, `manifest.json`, `styles.css` and a zip for manual install.
 
 ## License

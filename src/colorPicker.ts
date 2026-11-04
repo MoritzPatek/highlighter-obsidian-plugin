@@ -33,6 +33,7 @@ interface CmView {
  *                      the picker also offers "Remove highlight".
  * @param autoShown     Opened by a mouse selection: unhandled keys close the popover and
  *                      pass through to the editor instead of being swallowed.
+ * @param onHandle      Receives a function that closes the picker (resolves null), for plugin unload.
  * @returns The choice, or null when the user cancelled (Esc, click outside, scroll, blur).
  */
 export function openColorPicker(
@@ -42,6 +43,7 @@ export function openColorPicker(
 	lastUsedIndex: number,
 	isHighlighted: boolean,
 	autoShown = false,
+	onHandle?: (close: () => void) => void,
 ): Promise<PickerChoice | null> {
 	return new Promise((resolve) => {
 		const cm = (editor as unknown as { cm?: CmView }).cm;
@@ -57,6 +59,8 @@ export function openColorPicker(
 			// Return focus to the editor; applying the edit happens in the caller.
 			if (!cm?.contentDOM.contains(document.activeElement)) editor.focus();
 		};
+
+		onHandle?.(() => settle(null));
 
 		const popover = new ColorPopover({
 			colors,
@@ -92,14 +96,17 @@ export function openColorPicker(
 			[[], 'Home', () => popover.move('first')],
 			[[], 'End', () => popover.move('last')],
 			[[], 'Enter', () => popover.chooseActive()],
-			[[], ' ', () => popover.chooseActive()],
-			[[], '0', () => popover.chooseRemove()],
 			[[], 'Escape', () => settle(null)],
 			[['Mod'], 'h', () => settle(null)],
 		];
 		// Backspace/Delete remove the highlight only in Cmd+H mode. When auto-shown they
 		// fall through to the catch-all below: close and delete the selected text as usual.
+		// '0' only exists as a key when there is a Remove item; otherwise it falls through
+		// to the catch-all (auto: close and pass through; Cmd+H mode: swallowed, so it
+		// cannot replace the selection).
+		if (isHighlighted) keys.push([[], '0', () => popover.chooseRemove()]);
 		if (!autoShown) {
+			keys.push([[], ' ', () => popover.chooseActive()]);
 			keys.push([[], 'Backspace', () => popover.chooseRemove()]);
 			keys.push([[], 'Delete', () => popover.chooseRemove()]);
 		}

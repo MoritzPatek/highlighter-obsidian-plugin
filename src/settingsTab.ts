@@ -48,6 +48,7 @@ export class ColorHighlighterSettingTab extends PluginSettingTab {
 			});
 			chip.style.backgroundColor = entry.color;
 
+			const colorInput = () => setting.controlEl.querySelector('input[type="color"]');
 			setting.addText((text) => {
 				text.setPlaceholder(label).setValue(entry.name);
 				text.inputEl.maxLength = MAX_NAME_LENGTH;
@@ -55,6 +56,7 @@ export class ColorHighlighterSettingTab extends PluginSettingTab {
 				text.inputEl.addClass('color-highlighter-name');
 				text.onChange(async (value) => {
 					entry.name = value.trim() || label;
+					colorInput()?.setAttribute('aria-label', `Color for ${entry.name}`);
 					await this.plugin.saveSettings();
 				});
 			});
@@ -67,9 +69,7 @@ export class ColorHighlighterSettingTab extends PluginSettingTab {
 					await this.plugin.saveSettings();
 				});
 			});
-			setting.controlEl
-				.querySelector('input[type="color"]')
-				?.setAttribute('aria-label', `Color for color ${index + 1}`);
+			colorInput()?.setAttribute('aria-label', `Color for ${entry.name}`);
 		});
 
 		new Setting(containerEl)

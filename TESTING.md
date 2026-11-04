@@ -20,7 +20,7 @@ This builds the plugin and copies `main.js`, `manifest.json` and `styles.css` in
 
 ## 3. Run the checklist
 
-Open **Start here** and go through it. It covers highlighting, recoloring, removing, native `==highlights==`, multi-line selections, lists, tables, commands and settings. Check each item in Live Preview and in Reading view.
+Open **Start here** and go through it. It covers highlighting, recoloring, removing, native `==highlights==`, multi-line selections, lists, tables, commands and settings. Check each item in Live Preview and in Reading view. When the picker opens by itself after a mouse selection, Backspace, Delete, Space and typing close it and work as usual in the editor; use 0 or a click to remove a highlight there. With Cmd+H, Backspace/Delete remove the highlight and Space applies the focused color.
 
 The sample notes are meant to be changed. To get a clean copy back: `git checkout test-vault` (this restores the notes, not the plugin files).
 

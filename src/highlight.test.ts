@@ -3,9 +3,11 @@ import {
 	applyEdit,
 	applyHighlight,
 	buildMark,
+	endsInsideFence,
 	findHighlights,
 	getHighlightState,
 	removeHighlight,
+	selectionTouchesCode,
 	type TextEdit,
 } from './highlight';
 
@@ -399,5 +401,73 @@ describe('getHighlightState', () => {
 	it('reports a mixed selection as highlighted', () => {
 		const t = `plain ${mark('b')} plain`;
 		expect(getHighlightState(t, 0, t.length).highlighted).toBe(true);
+	});
+});
+
+describe('review fixes: == in prose and code', () => {
+	it('does not treat `a == b && c == d` as a native highlight', () => {
+		const t = 'if (a == b && c == d)';
+		expect(findHighlights(t)).toEqual([]);
+		const { out } = apply(t, 'b');
+		expect(out).toBe(`if (a == ${mark('b')} && c == d)`);
+		expect(out.match(/==/g)).toHaveLength(2);
+	});
+	it('does not treat `a == b == c` as a native highlight; remove is a no-op', () => {
+		expect(findHighlights('a == b == c')).toEqual([]);
+		const t = 'a == b == c';
+		const at = t.indexOf('b');
+		expect(removeHighlight(t, at, at)).toBeNull();
+	});
+	it('leaves prose like `x == y` alone', () => {
+		expect(findHighlights('x == y')).toEqual([]);
+		expect(apply('x == y', 'y').out).toBe(`x == ${mark('y')}`);
+	});
+	it('still finds real native highlights', () => {
+		expect(findHighlights('a ==real one== b')).toHaveLength(1);
+		expect(findHighlights('==x==')).toHaveLength(1);
+		expect(findHighlights('== no==')).toEqual([]);
+		expect(findHighlights('==no ==')).toEqual([]);
+	});
+	it('ignores highlights inside inline code and fenced blocks', () => {
+		expect(findHighlights('use `==x==` here')).toEqual([]);
+		expect(findHighlights('```\n==x==\n```')).toEqual([]);
+	});
+	it('detects selections touching code', () => {
+		const t = 'see `code here` ok';
+		expect(selectionTouchesCode(t, t.indexOf('code'), t.indexOf('here'))).toBe(true);
+		expect(selectionTouchesCode(t, 0, 3)).toBe(false);
+		expect(selectionTouchesCode(t, 0, t.length)).toBe(false); // whole span is fine
+		expect(selectionTouchesCode('```\nx = 1\n```', 4, 9)).toBe(true);
+		expect(selectionTouchesCode('x = 1', 0, 3, true)).toBe(true);
+	});
+	it('knows when the document is inside an open fence', () => {
+		expect(endsInsideFence('a\n```js\nx')).toBe(true);
+		expect(endsInsideFence('a\n```js\nx\n```\nb')).toBe(false);
+	});
+});
+
+describe('review fixes: formatting markers', () => {
+	it('expands a partial selection to the whole bold run', () => {
+		const t = '**bold** text';
+		const { out } = apply(t, 'bold** t');
+		expect(out).toBe(`${mark('**bold** t')}ext`);
+	});
+	it('expands when the selection starts inside the opening marker', () => {
+		const t = 'a **bold** b';
+		const from = t.indexOf('**') + 1;
+		const edit = applyHighlight(t, from, t.indexOf('bold') + 2, Y) as TextEdit;
+		expect(applyEdit(t, edit)).toBe(`a ${mark('**bold**')} b`);
+	});
+	it('handles italic, strike and code runs', () => {
+		expect(apply('x *it* y', 'it* y').out).toBe(`x ${mark('*it* y')}`);
+		expect(apply('x ~~gone~~ y', 'x ~~go').out).toBe(`${mark('x ~~gone~~')} y`);
+		expect(apply('x `c` y', 'x `').out).toBe(`${mark('x `c`')} y`);
+	});
+	it('leaves a selection strictly inside the run content alone', () => {
+		expect(apply('**bold text**', 'old').out).toBe(`**b${mark('old')} text**`);
+	});
+	it('does not mistake list stars or snake_case for markers', () => {
+		expect(apply('* item here', 'item').out).toBe(`* ${mark('item')} here`);
+		expect(apply('a snake_case_name b', 'case').out).toBe(`a snake_${mark('case')}_name b`);
 	});
 });
