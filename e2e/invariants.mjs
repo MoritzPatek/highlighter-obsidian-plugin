@@ -92,6 +92,8 @@ const count = (s, t) => s.split(t).length - 1;
 /** Violations of "the note still means the same" after an edit from `before` to `after`. */
 export function violations(before, after, color) {
 	const v = [];
+	// A highlight at the very end of a note appends one "\n" for the caret (same undo step): not a change of the note.
+	if (!before.endsWith('\n') && after.endsWith('\n') && after.slice(0, -1).split('\n').length === before.split('\n').length) after = after.slice(0, -1);
 	// (a) visible text unchanged
 	if (strip(after) !== strip(before)) v.push('visible text changed');
 	// (b) structure: same lines outside the touched ones, same syntax tokens, same prefixes

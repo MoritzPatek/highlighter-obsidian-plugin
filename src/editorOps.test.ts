@@ -151,10 +151,11 @@ describe('editor glue with a fake editor', () => {
 		const ed = new FakeEditor(doc, from, from + 3);
 		highlightSelection(ed, YELLOW);
 		expect(ed.getCursor('head')).toEqual({ line: 5, ch: 0 });
-		// a table at the very end of the note: the caret goes to the end of its last row
+		// a table at the very end of the note: an empty line is added below it for the caret
 		const last = new FakeEditor('| A |\n| - |\n| one |', 14, 17);
 		highlightSelection(last, YELLOW);
-		expect(last.getCursor('head').line).toBe(2);
+		expect(last.getCursor('head')).toEqual({ line: 3, ch: 0 });
+		expect(last.doc.endsWith('|\n')).toBe(true);
 	});
 
 	it('at the end of a line the caret goes to the start of the next line', () => {
@@ -163,11 +164,82 @@ describe('editor glue with a fake editor', () => {
 		expect(ed.getCursor('head')).toEqual({ line: 1, ch: 0 });
 	});
 
-	it('at the very end of the document the caret stays after </mark>', () => {
+	// Fix for the end-of-note exception: with no place for the caret past the mark, one "\n" is appended in the
+	// SAME edit and the caret goes on that new empty line, so the highlight renders at once. One undo reverts both.
+	it('at the very end of the note a newline is appended and the caret goes on the new line', () => {
 		const ed = new FakeEditor('one two', 4, 7);
 		highlightSelection(ed, YELLOW);
-		expect(ed.doc.endsWith('</mark>')).toBe(true);
-		expect(ed.sel.from).toBe(ed.doc.length);
+		expect(ed.doc.endsWith('</mark>\n')).toBe(true);
+		expect(ed.getCursor('head')).toEqual({ line: 1, ch: 0 });
+		ed.undo();
+		expect(ed.doc).toBe('one two');
+		expect(ed.history).toHaveLength(0); // one undo step was enough
+	});
+
+	it('the last sentence of a note: caret clear of the mark, a single undo restores the note', () => {
+		for (const tail of ['', '\n']) {
+			const doc = `first line\n\nready, delete this note and make the vault your own.${tail}`;
+			const from = doc.indexOf('ready');
+			const ed = new FakeEditor(doc, from, doc.indexOf('.'));
+			highlightSelection(ed, YELLOW);
+			// the highlight ends right before the final period: the caret target is the end of the note
+			const lines = ed.doc.split('\n');
+			const head = ed.getCursor('head');
+			expect(head, JSON.stringify(tail)).toEqual({ line: lines.length - 1, ch: 0 });
+			expect(lines[lines.length - 1]).toBe('');
+			expect(ed.doc.endsWith('.\n'), JSON.stringify(tail)).toBe(true);
+			expect(ed.doc.endsWith('\n\n')).toBe(false);
+			ed.undo();
+			expect(ed.doc, JSON.stringify(tail)).toBe(doc);
+		}
+	});
+
+	it('when the note already ends with a newline the caret just moves to that line (nothing appended)', () => {
+		const doc = 'one two\n';
+		const ed = new FakeEditor(doc, 4, 7);
+		highlightSelection(ed, YELLOW);
+		expect(ed.doc.endsWith('</mark>\n')).toBe(true);
+		expect(ed.doc.endsWith('\n\n')).toBe(false);
+		expect(ed.getCursor('head')).toEqual({ line: 1, ch: 0 });
+	});
+
+	it('a highlight followed by a final period at the end of the note also gets the empty line', () => {
+		const ed = new FakeEditor('so own.', 3, 6);
+		highlightSelection(ed, YELLOW);
+		expect(ed.doc.endsWith('</mark>.\n')).toBe(true);
+		expect(ed.getCursor('head')).toEqual({ line: 1, ch: 0 });
+		ed.undo();
+		expect(ed.doc).toBe('so own.');
+	});
+
+	it('pen over an existing mark at the end of the note, and recoloring it, also end on an empty line', () => {
+		const mk = (c: string, t: string) => `<mark style="background: ${c};">${t}</mark>`;
+		const doc = `a ${mk('#FFD60A55', 'last words')}`;
+		const pen = new FakeEditor(doc, doc.indexOf('words'), doc.indexOf('words') + 5);
+		highlightSelection(pen, DEFAULT_COLORS[3]!.color);
+		expect(pen.getCursor('head').line).toBe(1);
+		expect(pen.doc.endsWith('\n')).toBe(true);
+		pen.undo();
+		expect(pen.doc).toBe(doc);
+		// recolor by clicking the mark (the whole mark is selected, as Obsidian does)
+		const from = doc.indexOf('<mark');
+		const click = new FakeEditor(doc, from, doc.length);
+		highlightSelection(click, DEFAULT_COLORS[1]!.color);
+		expect(click.doc).toBe(`a ${mk(DEFAULT_COLORS[1]!.color, 'last words')}\n`);
+		expect(click.getCursor('head')).toEqual({ line: 1, ch: 0 });
+		click.undo();
+		expect(click.doc).toBe(doc);
+	});
+
+	it('remove at the end of the note leaves no mark and adds nothing', () => {
+		const mk = (c: string, t: string) => `<mark style="background: ${c};">${t}</mark>`;
+		const doc = `a ${mk('#FFD60A55', 'last')}`;
+		const ed = new FakeEditor(doc, doc.indexOf('last'), doc.indexOf('last') + 4);
+		removeSelectionHighlight(ed);
+		expect(ed.doc).toBe('a last');
+		const caret = new FakeEditor(doc, doc.indexOf('ast'), doc.indexOf('ast'));
+		removeSelectionHighlight(caret);
+		expect(caret.doc).toBe('a last');
 	});
 
 	it('recoloring from a caret inside a mark also moves the caret out of it', () => {
@@ -220,7 +292,8 @@ describe('property: apply then remove over the sample notes', () => {
 								lines.slice(li + 1),
 							);
 							// the edit is confined to the selected line when it is a single line
-							expect(delta, tag).toBe(0);
+							// (a selection on the last line of the note gets one empty line appended for the caret)
+							expect(delta === 0 || (delta === 1 && li === lines.length - 1 && after[after.length - 1] === ''), tag).toBe(true);
 							const newLine = after[li] as string;
 							// (a) text outside the (expanded) range is byte-identical: the part of the
 							// line before the earliest touched span/format run and after the latest one
@@ -275,7 +348,9 @@ describe('property: multi-line selections', () => {
 								const tag = `${file} ${l1}:${c1} -> ${l2}:${c2}`;
 								if (res === 'nothing') continue;
 								const after = ed.doc.split('\n');
-								expect(after.length, tag).toBe(lines.length);
+								// (a selection that reaches the end of the note gets one empty line appended for the caret)
+								const grew = after.length - lines.length;
+								expect(grew === 0 || (grew === 1 && after[after.length - 1] === ''), tag).toBe(true);
 								expect(after.slice(0, l1), tag).toEqual(lines.slice(0, l1));
 								expect(after.slice(l2 + 1), tag).toEqual(lines.slice(l2 + 1));
 								expect(plain(ed.doc), tag).toBe(plain(original));

@@ -264,13 +264,26 @@ for (const k of selected) {
 	try {
 		await withTimeout((async () => {
 		const colorHex = colors[k.color - 1];
-		await c.ev(`__e2e.reset(${JSON.stringify(FIXTURE)})`);
+		let docText = k.prepare ? k.prepare(FIXTURE) : FIXTURE;
+		if (k.trimEnd) docText = docText.trimEnd();
+		await c.ev(`__e2e.reset(${JSON.stringify(docText)})`);
 		await sleep(400);
 		// Obsidian renumbers ordered lists on setValue, so the baseline is the editor's text, not the file.
 		const baseDoc = await c.ev('__e2e.doc()');
 		const [from, to] = findRange(k, baseDoc);
 		await c.ev(`__e2e.away(${from}, ${to})`);
 		await sleep(900);
+		let readBaseHere = readBase;
+		if (k.prepare) {
+			// a different note: its Reading baseline has to come from that note
+			await c.ev(`__e2e.setMode('reading', ${JSON.stringify(FILE)})`);
+			await sleep(1500);
+			readBaseHere = await c.ev('__e2e.collectReading()');
+			await c.ev(`__e2e.setMode('lp', ${JSON.stringify(FILE)})`);
+			await sleep(1000);
+			await c.ev(`__e2e.away(${from}, ${to})`);
+			await sleep(600);
+		}
 		const scrollY = await c.ev('__e2e.getScroll()');
 		const lpBase = await c.ev(`__e2e.metrics('lp')`);
 		// select
@@ -291,6 +304,18 @@ for (const k of selected) {
 			await sleep(700);
 		}
 		const after = await c.ev('__e2e.doc()');
+		// ---- one undo must give the note back (the highlight and an appended line are one edit)
+		if (k.undoCheck && popup) {
+			const painted1 = await c.ev('__e2e.doc()');
+			await key('z', 'KeyZ', 90, 4);
+			await sleep(500);
+			const undone = await c.ev('__e2e.doc()');
+			if (undone !== baseDoc) res.source.push(`one undo did not restore the note (${JSON.stringify(undone.slice(-90))})`);
+			await key('z', 'KeyZ', 90, 4 | 8); // redo
+			await sleep(500);
+			const redone = await c.ev('__e2e.doc()');
+			if (redone !== painted1) res.source.push('redo did not bring the highlight back');
+		}
 		// ---- source checks
 		if (k.nothing) {
 			if (after !== baseDoc) res.source.push('expected nothing to be painted, but the note changed');
@@ -338,7 +363,7 @@ for (const k of selected) {
 			await c.ev(`__e2e.setMode('reading', ${JSON.stringify(FILE)})`);
 			await sleep(1500);
 			const rd = await c.ev('__e2e.collectReading()');
-			res.reading = renderChecks('Reading view', readBase, rd, painted, colorHex, already);
+			res.reading = renderChecks('Reading view', readBaseHere, rd, painted, colorHex, already);
 			if (res.reading.length) res.shots.push(await shot(`${k.id}-reading`));
 			await c.ev(`__e2e.setMode('lp', ${JSON.stringify(FILE)})`);
 			await sleep(700);

@@ -33,6 +33,8 @@ export interface EditorLike {
 	offsetToPos(offset: number): Pos;
 	replaceRange(text: string, from: Pos, to?: Pos): void;
 	setCursor(pos: Pos): void;
+	/** All changes and the new caret in ONE undo step (Obsidian's Editor.transaction). */
+	transaction(tx: { changes?: { from: Pos; to?: Pos; text: string }[]; selection?: { from: Pos; to?: Pos } }): void;
 	setSelection(anchor: Pos, head?: Pos): void;
 	lineCount(): number;
 }
@@ -91,13 +93,16 @@ export function getState(ctx: SelectionContext): HighlightState {
 }
 
 /**
- * Replace the edited range and put the caret after it.
+ * Replace the edited range and put the caret after it, as ONE edit (one undo step).
  *
- * Live Preview shows the raw `<mark …>` source while the caret touches the
- * element (measured in Obsidian 1.15: caret at either end or inside reveals it,
- * one character past `</mark>` renders it). So after highlighting, the caret
- * goes one character past the closing tag, or to the start of the next line
- * when the highlight ends the line.
+ * Live Preview shows the raw `<mark ...>` source while the caret touches the element
+ * (measured in Obsidian 1.15: caret at either end or inside reveals it, one character past
+ * `</mark>` renders it). So after highlighting, the caret goes one character past the
+ * closing tag, or to the start of the next line when the highlight ends the line.
+ *
+ * When there is no such place (the caret would end up at the very end of the note, or in a
+ * table row), a single "\n" is appended to the note in the same edit and the caret goes on
+ * that new empty line, so the highlight renders at once. One undo removes both.
  */
 export function applyEdit(
 	editor: EditorLike,
@@ -107,15 +112,39 @@ export function applyEdit(
 ): void {
 	if (!edit) return;
 	const at = (offset: number) => editor.offsetToPos(ctx.base + offset);
-	editor.replaceRange(edit.insert, at(edit.from), at(edit.to));
-	let end = edit.selTo;
+	const firstLine = at(0).line;
+	const oldLines = ctx.text.split('\n');
+	const newText = ctx.text.slice(0, edit.from) + edit.insert + ctx.text.slice(edit.to);
+	const newLines = newText.split('\n');
+	const lastTouched = firstLine + oldLines.length - 1;
+	// the edit reaches the end of the note, or only the final empty line (a trailing newline) follows it
+	const isLastOfNote =
+		lastTouched === editor.lineCount() - 1 ||
+		(lastTouched === editor.lineCount() - 2 && editor.getLine(editor.lineCount() - 1) === '');
+	/** Line `i` of the note after the edit (the edit does not change the number of lines it touches... but be safe). */
+	const lineAfter = (i: number) =>
+		i < firstLine
+			? editor.getLine(i)
+			: i - firstLine < newLines.length
+				? (newLines[i - firstLine] as string)
+				: editor.getLine(i - (newLines.length - oldLines.length));
+	const lineCountAfter = editor.lineCount() + (newLines.length - oldLines.length);
+	/** Position in the new text for an offset within `newText`. */
+	const posIn = (off: number): Pos => {
+		const before = newText.slice(0, off).split('\n');
+		return { line: firstLine + before.length - 1, ch: (before[before.length - 1] as string).length };
+	};
+
+	let caret: Pos;
+	let appendNewline = false;
 	if (mode === 'highlight') {
+		let end = edit.selTo;
 		const closing = '</mark>';
 		const idx = edit.insert.indexOf(closing, Math.max(0, edit.selTo - edit.from));
 		if (idx >= 0) {
 			end = edit.from + idx + closing.length;
-			const pos = at(end);
-			const rest = editor.getLine(pos.line).slice(pos.ch);
+			const here = posIn(end);
+			const rest = lineAfter(here.line).slice(here.ch);
 			// Skip highlights / formatting that touch the new mark: a caret next to them reveals their markup.
 			let skipped = 0;
 			for (let n = neighborLength(rest); n > 0 && skipped < rest.length; n = neighborLength(rest.slice(skipped))) {
@@ -124,24 +153,37 @@ export function applyEdit(
 			end += skipped;
 			const step = firstCharLength(rest.slice(skipped));
 			if (step > 0) end += step; // one whole character (code point plus combining marks)
-			else if (pos.line + 1 < editor.lineCount()) end += 1; // the newline: start of next line
-			// else: end of the note, the caret stays next to the markup and Live Preview shows the source
+			else if (here.line + 1 < lineCountAfter) end += 1; // the newline: start of next line
 		}
-	}
-	// A caret inside a table row makes Live Preview open that cell's editor, which shows the raw
-	// <mark> source until you click away. Park the caret after the table instead.
-	const target = at(end);
-	if (mode === 'highlight' && isTableLine(editor.getLine(target.line))) {
-		let line = target.line;
-		while (line + 1 < editor.lineCount() && isTableLine(editor.getLine(line + 1))) line++;
-		if (line + 1 < editor.lineCount()) {
-			editor.setCursor({ line: line + 1, ch: 0 });
-			return;
+		// past the end of the touched text means the start of the next line
+		caret = end > newText.length ? { line: firstLine + newLines.length, ch: 0 } : posIn(end);
+		// A caret inside a table row makes Live Preview open that cell's editor, which shows the raw
+		// <mark> source until you click away. Park the caret after the table instead.
+		if (isTableLine(lineAfter(caret.line))) {
+			let line = caret.line;
+			while (line + 1 < lineCountAfter && isTableLine(lineAfter(line + 1))) line++;
+			caret = line + 1 < lineCountAfter ? { line: line + 1, ch: 0 } : { line, ch: lineAfter(line).length };
 		}
-		editor.setCursor({ line, ch: editor.getLine(line).length });
-		return;
+		// Nowhere to put the caret that is clear of the mark: add one empty line at the end of the note.
+		const lastLine = lineCountAfter - 1;
+		if (isLastOfNote && caret.ch >= lineAfter(caret.line).length) {
+			if (caret.line === lastLine && lineAfter(lastLine) !== '') appendNewline = true;
+			// the note already ends with a newline: just use that last empty line
+			else if (caret.line === lastLine - 1 && lineAfter(lastLine) === '') caret = { line: lastLine, ch: 0 };
+		}
+	} else {
+		caret = posIn(Math.min(edit.selTo, newText.length));
 	}
-	editor.setCursor(target);
+
+	const changes = [{ from: at(edit.from), to: at(edit.to), text: edit.insert }];
+	if (appendNewline) {
+		const docEnd = editor.offsetToPos(editor.posToOffset({ line: editor.lineCount() - 1, ch: editor.getLine(editor.lineCount() - 1).length }));
+		const change = changes[0] as { text: string; to: Pos };
+		if (edit.to === ctx.text.length) change.text += '\n'; // the edit reaches the end of the note: one change
+		else changes.push({ from: docEnd, to: docEnd, text: '\n' });
+		caret = { line: lineCountAfter, ch: 0 };
+	}
+	editor.transaction({ changes, selection: { from: caret } });
 }
 
 const isTableLine = (line: string) => /^[ \t]*(?:>[ \t]*)*\|/.test(line);

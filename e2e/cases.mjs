@@ -4,6 +4,9 @@
 //   color: 1..5 (the picker's number key)
 //   painted: optional, the exact texts that must end up painted (in order). Omit for "whatever the plugin decides".
 //   nothing: true when the plugin must refuse (no plain text in the selection)
+//   trimEnd: run on the note without its trailing newline (the caret cannot go below the highlight)
+//   prepare: (doc) => doc, a different note to run on (e.g. one that ends with a mark)
+//   undoCheck: true: one Cmd+Z must restore the note exactly (and Cmd+Shift+Z redo it)
 export const cases = [
 	// --- headings
 	{ id: 'h1-word', section: 'Headings', find: 'Heading level one', color: 1 },
@@ -108,4 +111,28 @@ export const cases = [
 	{ id: 'mouse-long-line', via: 'mouse', section: 'Mouse', find: 'because it keeps going and going', color: 5 },
 	{ id: 'mouse-native', via: 'mouse', section: 'Mouse', find: 'sentence and another', color: 1, after: 'Native:' },
 	{ id: 'mouse-two-lines', via: 'mouse', section: 'Mouse', find: 'are stored as separate lines', color: 2 },
+	// --- end of the note (the caret has to go on a new empty line, in the same undo step)
+	{ id: 'eof-sentence-newline', section: 'End of note', find: 'The last paragraph of the note ends here, with a closing sentence.', color: 1, undoCheck: true },
+	{ id: 'eof-sentence-no-newline', section: 'End of note', find: 'The last paragraph of the note ends here, with a closing sentence.', color: 2, trimEnd: true, undoCheck: true },
+	{ id: 'eof-last-word', section: 'End of note', find: 'closing sentence', color: 3, trimEnd: true, undoCheck: true },
+	{ id: 'eof-last-word-newline', section: 'End of note', find: 'closing sentence', color: 4, undoCheck: true },
+	{
+		id: 'eof-recolor-last-mark',
+		section: 'End of note',
+		prepare: (d) => d.replace('The last paragraph of the note ends here, with a closing sentence.', 'The note ends with <mark style="background: #FFD60A55;">a yellow mark</mark>'),
+		after: 'The note ends with',
+		find: '<mark style="background: #FFD60A55;">a yellow mark</mark>',
+		color: 5,
+		trimEnd: true,
+		undoCheck: true,
+	},
+	{
+		id: 'eof-pen-last-mark',
+		section: 'End of note',
+		prepare: (d) => d.replace('The last paragraph of the note ends here, with a closing sentence.', 'The note ends with <mark style="background: #FFD60A55;">a yellow mark</mark>.'),
+		after: 'The note ends with',
+		find: 'yellow m',
+		color: 1,
+		undoCheck: true,
+	},
 ];
