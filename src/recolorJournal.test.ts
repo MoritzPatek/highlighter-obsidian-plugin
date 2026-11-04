@@ -229,3 +229,81 @@ describe('composeJournal: new edits do not wait behind a pending pass', () => {
 		expect(Object.fromEntries(c.map)).toEqual({ [A]: B });
 	});
 });
+
+describe('apply that throws after the text changed', () => {
+	/** A vault whose apply writes and then throws (the editor edit worked, the save failed). */
+	function throwingVault(files: Record<string, string>, throwOn: string[]) {
+		const { disk, io } = makeVault(files);
+		const real = io.apply;
+		let thrown = 0;
+		return {
+			disk,
+			get thrown() {
+				return thrown;
+			},
+			io: {
+				...io,
+				apply: async (p: string, m: ReadonlyMap<string, string>) => {
+					const n = await real(p, m);
+					if (throwOn.includes(p) && thrown++ < 1) throw new Error('save failed');
+					return n;
+				},
+			} as RecolorIO,
+		};
+	}
+
+	it('a swap A<->B is applied exactly once: the note is marked done, not replayed', async () => {
+		const map = new Map([[A, B], [B, A]]);
+		const files = { 'x.md': `${mk(A, 'a')} ${mk(B, 'b')}`, 'y.md': mk(A, 'y') };
+		const v = throwingVault(files, ['x.md']);
+		const j = newJournal('dev', map, [A, B], [B, A]);
+		const r1 = await runRecolorPass(j, v.io, async () => undefined);
+		expect(r1.failed).toEqual([]);
+		expect(j.done.sort()).toEqual(['x.md', 'y.md']);
+		expect(v.disk['x.md']).toBe(`${mk(B, 'a')} ${mk(A, 'b')}`);
+		// another run changes nothing
+		await runRecolorPass(j, v.io, async () => undefined);
+		expect(v.disk).toEqual({ 'x.md': `${mk(B, 'a')} ${mk(A, 'b')}`, 'y.md': mk(B, 'y') });
+	});
+
+	it('a chain A->B, B->C ends with A->B and B->C exactly once', async () => {
+		const map = new Map([[A, B], [B, C]]);
+		const v = throwingVault({ 'x.md': `${mk(A, 'a')} ${mk(B, 'b')}` }, ['x.md']);
+		const j = newJournal('dev', map, [A, B], [B, C]);
+		await runRecolorPass(j, v.io, async () => undefined);
+		await runRecolorPass(j, v.io, async () => undefined);
+		expect(v.disk['x.md']).toBe(`${mk(B, 'a')} ${mk(C, 'b')}`);
+	});
+
+	it('when the state is unknown under a swap, inflight stays set and the retry is guarded', async () => {
+		const map = new Map([[A, B], [B, A]]);
+		const text = `${mk(A, 'a')} ${mk(B, 'b')}`;
+		const disk: Record<string, string> = { 'x.md': text, 'z.md': mk(A, 'z') };
+		let first = true;
+		const io: RecolorIO = {
+			files: () => ['x.md', 'z.md'],
+			read: async (p) => disk[p] as string,
+			apply: async (p, m) => {
+				if (p === 'x.md' && first) {
+					first = false;
+					disk[p] = 'someone else edited this note'; // neither before nor after
+					throw new Error('boom');
+				}
+				const r = recolorMarks(disk[p] as string, m);
+				disk[p] = r.text;
+				return r.count;
+			},
+		};
+		const j = newJournal('dev', map, [A, B], [B, A]);
+		const r1 = await runRecolorPass(j, io, async () => undefined);
+		expect(r1.failed).toEqual(['x.md']);
+		expect(j.inflight?.path).toBe('x.md'); // kept for the guard
+		expect(disk['z.md']).toBe(mk(A, 'z')); // the pass stopped before z
+		// the retry: the note changed since (neither hash matches) -> guarded: never replayed
+		const r2 = await runRecolorPass(j, io, async () => undefined);
+		expect(r2.failed).toEqual([]);
+		expect(disk['x.md']).toBe('someone else edited this note');
+		expect(disk['z.md']).toBe(mk(B, 'z'));
+		expect(j.inflight).toBeNull();
+	});
+});

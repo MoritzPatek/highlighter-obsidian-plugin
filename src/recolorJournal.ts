@@ -143,18 +143,38 @@ export async function runRecolorPass(
 			}
 		}
 
+		const before = hashText(data);
+		const after = hashText(applyToText(data, map));
 		if (!safe) {
-			journal.inflight = { path, before: hashText(data), after: '' };
-			journal.inflight.after = hashText(applyToText(data, map));
+			journal.inflight = { path, before, after };
 			await save(journal);
 		}
 		let count: number;
 		try {
 			count = await io.apply(path, map);
 		} catch {
-			fail(path);
-			journal.inflight = null;
-			continue;
+			// `apply` can throw after the text already changed (e.g. the editor edit worked, saving failed).
+			// Look at the note before deciding, or a retry under a swap/chain would apply the map twice.
+			let now = '';
+			try {
+				now = hashText(await io.read(path));
+			} catch {
+				/* unknown state */
+			}
+			if (now === after) {
+				count = recolorEdits(data, map).length; // it was applied: count it as done
+			} else {
+				fail(path);
+				if (safe || now === before) {
+					journal.inflight = null; // untouched (or replay-safe): a plain retry is fine
+				} else {
+					// State unknown under a replay-unsafe map: keep `inflight` so the hash guard decides
+					// the retry, and stop here (the guard holds a single note).
+					await save(journal);
+					return result;
+				}
+				continue;
+			}
 		}
 		done.add(path);
 		journal.done.push(path);
