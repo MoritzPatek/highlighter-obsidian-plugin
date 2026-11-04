@@ -5,6 +5,7 @@ import {
 	getHighlightState,
 	removeHighlight,
 	endsInsideFence,
+	type Fence,
 	selectionTouchesCode,
 	type TextEdit,
 } from './highlight';
@@ -24,7 +25,7 @@ interface SelectionContext {
 	from: number;
 	to: number;
 	/** The selection starts inside a fenced code block opened above. */
-	fenceOpen: boolean;
+	fence: Fence | null;
 }
 
 export default class ColorHighlighterPlugin extends Plugin {
@@ -141,7 +142,7 @@ export default class ColorHighlighterPlugin extends Plugin {
 	private async highlightWithPicker(editor: Editor, auto = false) {
 		const ctx = this.getSelectionContext(editor);
 		if (this.refuseInCode(ctx, auto)) return;
-		const state = getHighlightState(ctx.text, ctx.from, ctx.to);
+		const state = getHighlightState(ctx.text, ctx.from, ctx.to, ctx.fence);
 		// Nothing selected and the caret is not inside a highlight: nothing to color.
 		if (!auto && ctx.from === ctx.to && !state.highlighted) {
 			new Notice('Select some text to highlight.');
@@ -179,19 +180,20 @@ export default class ColorHighlighterPlugin extends Plugin {
 		// Re-read the selection: it may have changed while the picker was open.
 		const ctx = this.getSelectionContext(editor);
 		if (this.refuseInCode(ctx, false)) return;
-		this.applyEdit(editor, ctx, applyHighlight(ctx.text, ctx.from, ctx.to, color.color));
+		this.applyEdit(editor, ctx, applyHighlight(ctx.text, ctx.from, ctx.to, color.color, ctx.fence));
 		this.settings.lastUsedIndex = index;
 		await this.saveSettings();
 	}
 
 	private removeSelectionHighlight(editor: Editor) {
 		const ctx = this.getSelectionContext(editor);
-		this.applyEdit(editor, ctx, removeHighlight(ctx.text, ctx.from, ctx.to));
+		if (this.refuseInCode(ctx, false)) return;
+		this.applyEdit(editor, ctx, removeHighlight(ctx.text, ctx.from, ctx.to, ctx.fence));
 	}
 
 	/** Code is never highlighted. Returns true (with a notice unless `quiet`) when the selection touches code. */
 	private refuseInCode(ctx: SelectionContext, quiet: boolean): boolean {
-		if (!selectionTouchesCode(ctx.text, ctx.from, ctx.to, ctx.fenceOpen)) return false;
+		if (!selectionTouchesCode(ctx.text, ctx.from, ctx.to, ctx.fence)) return false;
 		if (!quiet) new Notice("Can't highlight inside code.");
 		return true;
 	}
@@ -211,7 +213,7 @@ export default class ColorHighlighterPlugin extends Plugin {
 			text: editor.getRange(startPos, endPos),
 			from: editor.posToOffset(a) - base,
 			to: editor.posToOffset(b) - base,
-			fenceOpen: endsInsideFence(editor.getRange({ line: 0, ch: 0 }, startPos)),
+			fence: endsInsideFence(editor.getRange({ line: 0, ch: 0 }, startPos)),
 		};
 	}
 

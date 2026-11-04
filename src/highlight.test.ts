@@ -4,6 +4,7 @@ import {
 	applyHighlight,
 	buildMark,
 	endsInsideFence,
+	codeRanges,
 	findHighlights,
 	getHighlightState,
 	removeHighlight,
@@ -438,11 +439,11 @@ describe('review fixes: == in prose and code', () => {
 		expect(selectionTouchesCode(t, 0, 3)).toBe(false);
 		expect(selectionTouchesCode(t, 0, t.length)).toBe(false); // whole span is fine
 		expect(selectionTouchesCode('```\nx = 1\n```', 4, 9)).toBe(true);
-		expect(selectionTouchesCode('x = 1', 0, 3, true)).toBe(true);
+		expect(selectionTouchesCode('x = 1', 0, 3, { char: '`', len: 3 })).toBe(true);
 	});
 	it('knows when the document is inside an open fence', () => {
-		expect(endsInsideFence('a\n```js\nx')).toBe(true);
-		expect(endsInsideFence('a\n```js\nx\n```\nb')).toBe(false);
+		expect(endsInsideFence('a\n```js\nx')).toEqual({ char: '`', len: 3 });
+		expect(endsInsideFence('a\n```js\nx\n```\nb')).toBeNull();
 	});
 });
 
@@ -469,5 +470,44 @@ describe('review fixes: formatting markers', () => {
 	it('does not mistake list stars or snake_case for markers', () => {
 		expect(apply('* item here', 'item').out).toBe(`* ${mark('item')} here`);
 		expect(apply('a snake_case_name b', 'case').out).toBe(`a snake_${mark('case')}_name b`);
+	});
+});
+
+describe('final fixes: remove respects code, CommonMark fences', () => {
+	const fence3 = { char: '`', len: 3 } as const;
+	it('does not find or remove ==x== inside a fence opened above', () => {
+		const t = '==x== in code';
+		expect(findHighlights(t, fence3)).toEqual([]);
+		expect(removeHighlight(t, 2, 2, fence3)).toBeNull();
+		expect(removeHighlight(t, 2, 2)).not.toBeNull(); // outside code it still works
+		expect(getHighlightState(t, 2, 2, fence3).highlighted).toBe(false);
+		expect(applyHighlight('abc', 0, 3, Y, fence3)).not.toBeNull(); // pure logic only ignores spans
+	});
+	it('ignores ==x== inside a fence within the text', () => {
+		expect(removeHighlight('```\n==x==\n```', 6, 6)).toBeNull();
+	});
+	it('a four-backtick fence is not closed by a three-backtick line', () => {
+		const t = '````\n```\n==x==\n````\n==y==';
+		const spans = findHighlights(t);
+		expect(spans).toHaveLength(1);
+		expect(t.slice(spans[0]!.start, spans[0]!.end)).toBe('==y==');
+		expect(endsInsideFence('````\n```\nfoo')).toEqual({ char: '`', len: 4 });
+	});
+	it('``` inside a ~~~ fence does not close it, and vice versa', () => {
+		expect(endsInsideFence('~~~\n```\nfoo')).toEqual({ char: '~', len: 3 });
+		expect(endsInsideFence('~~~\n```\n~~~\nfoo')).toBeNull();
+		expect(endsInsideFence('```\n~~~\nfoo')).toEqual({ char: '`', len: 3 });
+	});
+	it('a longer closing fence closes; text after the closer does not', () => {
+		expect(endsInsideFence('```\nx\n`````')).toBeNull();
+		expect(endsInsideFence('```\nx\n``` js')).toEqual({ char: '`', len: 3 });
+	});
+	it('fences are indented at most 3 spaces; indented code is not a fence', () => {
+		expect(endsInsideFence('   ```\nx')).not.toBeNull();
+		expect(endsInsideFence('    ```\nx')).toBeNull();
+		expect(codeRanges('    ==x== indented')).toEqual([]);
+	});
+	it('a backtick fence line with a backtick in its info string is inline code, not a fence', () => {
+		expect(endsInsideFence('``` a`b\nx')).toBeNull();
 	});
 });

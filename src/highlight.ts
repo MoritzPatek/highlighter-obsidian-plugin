@@ -31,8 +31,10 @@
  *   stay outside the tags so they keep working. Table rows are wrapped per
  *   cell so the pipes stay outside the tags. Leading and trailing spaces
  *   of each piece stay outside the tags.
- * - Not aware of code blocks or inline code; selecting inside code is the
- *   caller's responsibility.
+ * - Code is never touched: `==x==` or `<mark>` inside inline code or fenced
+ *   code blocks (CommonMark fences) is not a highlight. When the text starts
+ *   inside a fence opened above it, pass that fence (see `endsInsideFence`).
+ *   Indented code blocks are not detected.
  */
 
 export interface TextEdit {
@@ -102,10 +104,10 @@ function spanRegex(): RegExp {
 }
 
 /** Find all highlights (`<mark>` and native `==x==`) in the text, in order. */
-export function findHighlights(text: string): HighlightSpan[] {
+export function findHighlights(text: string, fence: Fence | null = null): HighlightSpan[] {
 	const spans: HighlightSpan[] = [];
 	const re = spanRegex();
-	const code = codeRanges(text);
+	const code = codeRanges(text, fence);
 	let m: RegExpExecArray | null;
 	while ((m = re.exec(text)) !== null) {
 		const start = m.index;
@@ -140,54 +142,75 @@ interface Range {
 	fenced: boolean;
 }
 
+/** An open fenced code block: its fence character and length. */
+export interface Fence {
+	char: '`' | '~';
+	len: number;
+}
+
+const FENCE_OPEN_RE = /^ {0,3}(`{3,}|~{3,})(.*)$/;
+
+/** Advance the fence state over one line (CommonMark: same char, at least as long, indent <= 3, nothing else). */
+function stepFence(line: string, fence: Fence | null): Fence | null {
+	const m = FENCE_OPEN_RE.exec(line);
+	if (!m) return fence;
+	const run = m[1] as string;
+	const rest = m[2] as string;
+	const char = run.charAt(0) as '`' | '~';
+	if (fence) {
+		return char === fence.char && run.length >= fence.len && rest.trim() === '' ? null : fence;
+	}
+	if (char === '`' && rest.includes('`')) return null; // not a fence: info string has a backtick
+	return { char, len: run.length };
+}
+
 /** Fenced blocks and inline code spans in `text`. An unclosed fence runs to the end. */
-export function codeRanges(text: string, fenceOpen = false): Range[] {
+export function codeRanges(text: string, fence: Fence | null = null): Range[] {
 	const out: Range[] = [];
 	let pos = 0;
-	let fenceStart = fenceOpen ? 0 : -1;
+	let state = fence;
+	let fenceStart = fence ? 0 : -1;
 	for (const line of text.split('\n')) {
 		const lineEnd = pos + line.length;
-		if (/^\s*(?:```|~~~)/.test(line)) {
-			if (fenceStart < 0) fenceStart = pos;
-			else {
-				out.push({ start: fenceStart, end: lineEnd, fenced: true });
-				fenceStart = -1;
-			}
-		} else if (fenceStart < 0) {
+		const next = stepFence(line, state);
+		if (!state && next) fenceStart = pos;
+		else if (state && !next) {
+			out.push({ start: fenceStart, end: lineEnd, fenced: true });
+			fenceStart = -1;
+		} else if (!state && !next) {
 			const re = /(`+)(?!`)[^\n]*?(?<!`)\1(?!`)/g;
 			let m: RegExpExecArray | null;
 			while ((m = re.exec(line)) !== null) {
 				out.push({ start: pos + m.index, end: pos + m.index + m[0].length, fenced: false });
 			}
 		}
+		state = next;
 		pos = lineEnd + 1;
 	}
-	if (fenceStart >= 0) out.push({ start: fenceStart, end: text.length, fenced: true });
+	if (state) out.push({ start: fenceStart, end: text.length, fenced: true });
 	return out;
 }
 
-/** True when `text` (the document before some point) ends inside an open fenced code block. */
-export function endsInsideFence(textBefore: string): boolean {
-	let open = false;
-	for (const line of textBefore.split('\n')) {
-		if (/^\s*(?:```|~~~)/.test(line)) open = !open;
-	}
-	return open;
+/** The fenced code block the end of `textBefore` is inside, or null. */
+export function endsInsideFence(textBefore: string): Fence | null {
+	let state: Fence | null = null;
+	for (const line of textBefore.split('\n')) state = stepFence(line, state);
+	return state;
 }
 
 /**
  * Would highlighting [from, to) touch code? True when an edge of the selection
  * is inside an inline code span, the selection overlaps a fenced block, or the
- * selection starts inside a fence opened before `text`.
+ * selection starts inside a `fence` opened before `text`.
  */
 export function selectionTouchesCode(
 	text: string,
 	from: number,
 	to: number,
-	fenceOpen = false,
+	fence: Fence | null = null,
 ): boolean {
 	const [a, b] = normalizeRange(text, from, to);
-	return codeRanges(text, fenceOpen).some((r) =>
+	return codeRanges(text, fence).some((r) =>
 		r.fenced
 			? a === b
 				? a >= r.start && a <= r.end
@@ -236,8 +259,13 @@ function normalizeRange(text: string, from: number, to: number): [number, number
 }
 
 /** Highlights touched by the selection; for an empty selection, those containing the cursor. */
-function touchedSpans(text: string, from: number, to: number): HighlightSpan[] {
-	const spans = findHighlights(text);
+function touchedSpans(
+	text: string,
+	from: number,
+	to: number,
+	fence: Fence | null,
+): HighlightSpan[] {
+	const spans = findHighlights(text, fence);
 	if (from === to) {
 		return spans.filter((s) => s.contentStart <= from && from <= s.contentEnd);
 	}
@@ -245,9 +273,14 @@ function touchedSpans(text: string, from: number, to: number): HighlightSpan[] {
 }
 
 /** Tell whether the selection is highlighted, and in which color. */
-export function getHighlightState(text: string, from: number, to: number): HighlightState {
+export function getHighlightState(
+	text: string,
+	from: number,
+	to: number,
+	fence: Fence | null = null,
+): HighlightState {
 	const [a, b] = normalizeRange(text, from, to);
-	const touched = touchedSpans(text, a, b);
+	const touched = touchedSpans(text, a, b, fence);
 	const first = touched[0];
 	if (!first) return { highlighted: false, color: null, kind: null };
 	const withColor = touched.find((s) => s.color !== null);
@@ -399,9 +432,10 @@ export function applyHighlight(
 	from: number,
 	to: number,
 	color: string,
+	fence: Fence | null = null,
 ): TextEdit | null {
 	const [a, b] = normalizeRange(text, from, to);
-	const touched = touchedSpans(text, a, b);
+	const touched = touchedSpans(text, a, b, fence);
 
 	if (a === b) {
 		const span = touched[0];
@@ -423,13 +457,13 @@ export function applyHighlight(
 	let end = b;
 	for (let prev = -1; prev !== end - start; ) {
 		prev = end - start;
-		for (const sp of touchedSpans(text, start, end)) {
+		for (const sp of touchedSpans(text, start, end, fence)) {
 			start = Math.min(start, sp.start);
 			end = Math.max(end, sp.end);
 		}
 		[start, end] = expandForMarkers(text, start, end);
 	}
-	const spansInRange = touchedSpans(text, start, end);
+	const spansInRange = touchedSpans(text, start, end, fence);
 	const inner = unwrap(text, start, end, spansInRange);
 	const wrapped = wrapText(inner, linePrefixAt(text, start), color);
 	if (!wrapped.changed) return null;
@@ -447,9 +481,14 @@ export function applyHighlight(
  * keeping the text. Whole highlights are unwrapped, even when only part of
  * them is selected. Returns null when nothing is highlighted.
  */
-export function removeHighlight(text: string, from: number, to: number): TextEdit | null {
+export function removeHighlight(
+	text: string,
+	from: number,
+	to: number,
+	fence: Fence | null = null,
+): TextEdit | null {
 	const [a, b] = normalizeRange(text, from, to);
-	const touched = touchedSpans(text, a, b);
+	const touched = touchedSpans(text, a, b, fence);
 	if (touched.length === 0) return null;
 
 	const start = touched.reduce((m, s) => Math.min(m, s.start), Infinity);

@@ -68,7 +68,7 @@ All commands are in the command palette (Cmd+P) under "Color Highlighter".
 - Selections that span several lines are highlighted line by line (a highlight cannot cross a paragraph break and still render). Blank lines are skipped.
 - List bullets, numbers, checkboxes, quote markers and heading markers stay outside the highlight, so lists, tasks and headings keep working. In tables, each cell is highlighted on its own.
 - Only the first cursor is used if you have several.
-- Code blocks are not treated specially: don't highlight inside them.
+- Code is left alone: highlighting or removing inside inline code or fenced code blocks (``` or ~~~) is refused with a notice. Indented code blocks are not detected.
 
 ## Hotkey
 
