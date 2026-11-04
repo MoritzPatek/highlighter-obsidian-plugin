@@ -55,7 +55,7 @@ export function openColorPicker(
 			popover.destroy();
 			resolve(choice);
 			// Return focus to the editor; applying the edit happens in the caller.
-			editor.focus();
+			if (!cm?.contentDOM.contains(document.activeElement)) editor.focus();
 		};
 
 		const popover = new ColorPopover({
@@ -94,11 +94,15 @@ export function openColorPicker(
 			[[], 'Enter', () => popover.chooseActive()],
 			[[], ' ', () => popover.chooseActive()],
 			[[], '0', () => popover.chooseRemove()],
-			[[], 'Backspace', () => popover.chooseRemove()],
-			[[], 'Delete', () => popover.chooseRemove()],
 			[[], 'Escape', () => settle(null)],
 			[['Mod'], 'h', () => settle(null)],
 		];
+		// Backspace/Delete remove the highlight only in Cmd+H mode. When auto-shown they
+		// fall through to the catch-all below: close and delete the selected text as usual.
+		if (!autoShown) {
+			keys.push([[], 'Backspace', () => popover.chooseRemove()]);
+			keys.push([[], 'Delete', () => popover.chooseRemove()]);
+		}
 		for (const [mods, key, fn] of keys) {
 			scope.register(mods, key, () => {
 				fn();

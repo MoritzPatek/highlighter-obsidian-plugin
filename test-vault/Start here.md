@@ -23,7 +23,7 @@ Select the word **banana** in this line: I would like a banana today.
 ## 1b. Picker on mouse selection
 
 - [ ] Select a few words by dragging with the mouse (or double-click a word). After a moment the same popover appears under the selection, without pressing Cmd+H.
-- [ ] While it is open, press Cmd+C: the popover closes and the text is copied. Typing, Delete and Shift+arrows also close it and work as usual.
+- [ ] While it is open, press Cmd+C: the popover closes and the text is copied. Typing, Backspace/Delete (the selected text is deleted) and Shift+arrows also close it and work as usual.
 - [ ] Select with Shift+arrows or Cmd+A: no popover appears (Cmd+H still opens it).
 - [ ] Dragging a new selection moves the popover to the new place. Clicking elsewhere closes it.
 - [ ] Settings -> Color Highlighter -> "Show picker when selecting text" off: selecting with the mouse no longer opens it. Cmd+H still does.
