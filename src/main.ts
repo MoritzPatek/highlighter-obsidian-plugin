@@ -12,7 +12,8 @@ import {
 	touchesCode,
 } from './editorOps';
 import { shouldAutoShow } from './pickerLogic';
-import { recolorSummary, recolorVault } from './recolorVault';
+import { journalAction, newJournal, runRecolorPass, type PassResult } from './recolorJournal';
+import { recolorSummary, vaultIO } from './recolorVault';
 import { ColorHighlighterSettingTab } from './settingsTab';
 import {
 	DEFAULT_COLORS,
@@ -41,7 +42,7 @@ export default class ColorHighlighterPlugin extends Plugin {
 			this.addCommand({
 				id: `highlight-color-${index + 1}`,
 				name: `Highlight: ${color.name}`,
-				editorCallback: (editor) => void this.highlightWithColor(editor, index),
+				editorCallback: (editor) => void this.highlightAfterCommit(editor, index),
 			});
 		});
 
@@ -158,13 +159,58 @@ export default class ColorHighlighterPlugin extends Plugin {
 		return this.commitChain;
 	}
 
+	/** Per-device id (kept outside data.json, which may sync): only this device resumes its own pass. */
+	private deviceId(): string {
+		const key = 'color-highlighter-device';
+		let id = this.app.loadLocalStorage(key) as string | null;
+		if (typeof id !== 'string' || id === '') {
+			id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+			this.app.saveLocalStorage(key, id);
+		}
+		return id;
+	}
+
 	private async doCommitPalette() {
-		const map = paletteChanges(this.settings.committed, this.settings.colors);
-		if (map.size === 0) return;
-		const result = await recolorVault(this.app, map);
-		this.settings.committed = this.settings.colors.map((c) => c.color);
-		await this.saveSettings();
-		const msg = recolorSummary(result);
+		const device = this.deviceId();
+		const total: PassResult = { highlights: 0, notes: 0, failed: [] };
+		// Edits made while a pass runs are picked up by the next round.
+		for (let round = 0; round < 3; round++) {
+			let journal = this.settings.journal;
+			const action = journalAction(journal, device);
+			if (action === 'discard') {
+				// Started on another device (data.json synced): never replay it here, just adopt the palette.
+				this.settings.journal = null;
+				this.settings.committed = this.settings.colors.map((c) => c.color);
+				await this.saveSettings();
+				return;
+			}
+			if (action === 'none') {
+				const map = paletteChanges(this.settings.committed, this.settings.colors);
+				if (map.size === 0) break;
+				// Snapshot now: later edits must not change what this pass does or what `committed` becomes.
+				journal = newJournal(
+					device,
+					map,
+					this.settings.committed,
+					this.settings.colors.map((c) => c.color),
+				);
+				this.settings.journal = journal;
+				await this.saveSettings();
+			}
+			if (!journal) break;
+			const result = await runRecolorPass(journal, vaultIO(this.app), async (j) => {
+				this.settings.journal = j;
+				await this.saveSettings();
+			});
+			total.highlights += result.highlights;
+			total.notes += result.notes;
+			total.failed.push(...result.failed);
+			if (result.failed.length > 0) break; // stays pending; retried on the next commit or startup
+			this.settings.committed = [...journal.to];
+			this.settings.journal = null;
+			await this.saveSettings();
+		}
+		const msg = recolorSummary(total);
 		if (msg) new Notice(msg);
 	}
 
@@ -223,6 +269,12 @@ export default class ColorHighlighterPlugin extends Plugin {
 		} else {
 			await this.highlightWithColor(editor, choice.index);
 		}
+	}
+
+	/** Direct "Highlight: <color>" commands: wait for a running palette pass first, like the picker does. */
+	private async highlightAfterCommit(editor: Editor, index: number) {
+		await this.commitChain;
+		await this.highlightWithColor(editor, index);
 	}
 
 	private async highlightWithColor(editor: Editor, index: number) {

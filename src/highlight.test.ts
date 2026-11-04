@@ -8,6 +8,7 @@ import {
 	findHighlights,
 	getHighlightState,
 	highlightRange,
+	neighborLength,
 	removeHighlight,
 	selectionTouchesCode,
 	type TextEdit,
@@ -533,6 +534,20 @@ describe('final fixes: remove respects code, CommonMark fences', () => {
 	});
 	it('a backtick fence line with a backtick in its info string is inline code, not a fence', () => {
 		expect(endsInsideFence('``` a`b\nx')).toBeNull();
+	});
+});
+
+describe('neighborLength', () => {
+	it('measures the highlight or formatting element at the start of a string', () => {
+		expect(neighborLength('==abc== rest')).toBe(7);
+		expect(neighborLength(`${mark('g')} rest`)).toBe(mark('g').length);
+		expect(neighborLength('**bold** rest')).toBe(8);
+		expect(neighborLength('_it_ rest')).toBe(4);
+		expect(neighborLength('~~gone~~')).toBe(8);
+		expect(neighborLength('** dangling')).toBe(2);
+		expect(neighborLength(' plain')).toBe(0);
+		expect(neighborLength('')).toBe(0);
+		expect(neighborLength('== not a highlight==')).toBe(0);
 	});
 });
 

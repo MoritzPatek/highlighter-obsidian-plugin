@@ -64,12 +64,18 @@ export function computePopoverPosition(input: PositionInput): { left: number; to
 	const margin = input.margin ?? 8;
 	const { popup, viewport, anchor, editor } = input;
 
+	// The popover stays inside the editor (its scrollbar is not part of `editor`) and the window.
+	const minX = Math.max(margin, editor.left + margin);
+	const maxX = Math.min(viewport.width, editor.right) - popup.width - margin;
+	const minY = margin;
+	const maxY = Math.min(viewport.height, Math.max(editor.bottom, anchor ? anchor.bottom : 0)) - popup.height - margin;
+
 	let left: number;
 	let top: number;
 	if (anchor) {
 		left = anchor.left;
 		top = anchor.bottom + gap;
-		if (top + popup.height > viewport.height - margin) {
+		if (top > maxY) {
 			top = anchor.top - gap - popup.height;
 		}
 	} else {
@@ -77,10 +83,8 @@ export function computePopoverPosition(input: PositionInput): { left: number; to
 		top = editor.top + (editor.bottom - editor.top) / 3;
 	}
 
-	const maxLeft = viewport.width - popup.width - margin;
-	left = Math.max(margin, Math.min(left, maxLeft));
-	const maxTop = viewport.height - popup.height - margin;
-	top = Math.max(margin, Math.min(top, maxTop));
+	left = Math.max(minX, Math.min(left, Math.max(minX, maxX)));
+	top = Math.max(minY, Math.min(top, Math.max(minY, maxY)));
 	return { left, top };
 }
 

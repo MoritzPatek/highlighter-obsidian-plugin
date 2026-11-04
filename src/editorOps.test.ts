@@ -170,6 +170,28 @@ describe('editor glue with a fake editor', () => {
 		expect(ed.doc.slice(ed.sel.from)).toBe('x');
 	});
 
+	it('parks the caret behind a native ==x== that touches the new mark (pen split)', () => {
+		const doc = 'x ==abc== y';
+		const b = doc.indexOf('b');
+		const ed = new FakeEditor(doc, b, b + 1);
+		highlightSelection(ed, YELLOW);
+		expect(ed.doc.slice(0, ed.sel.from).endsWith('==c== ')).toBe(true);
+		expect(ed.doc.slice(ed.sel.from)).toBe('y');
+	});
+
+	it('parks the caret behind a following <mark> element and a bold run', () => {
+		const mark2 = '<mark style="background: #3DDC8455;">g</mark>';
+		const ed = new FakeEditor(`one two${mark2} z`, 4, 7);
+		highlightSelection(ed, YELLOW);
+		expect(ed.doc.slice(0, ed.sel.from).endsWith(`${mark2} `)).toBe(true);
+		const ed2 = new FakeEditor('one two**bold** z', 4, 7);
+		highlightSelection(ed2, YELLOW);
+		expect(ed2.doc.slice(0, ed2.sel.from).endsWith('**bold** ')).toBe(true);
+		const ed3 = new FakeEditor('one two~~gone~~', 4, 7);
+		highlightSelection(ed3, YELLOW);
+		expect(ed3.doc.slice(ed3.sel.from)).toBe('');
+	});
+
 	it('at the end of a line the caret goes to the start of the next line', () => {
 		const ed = new FakeEditor('one two\nnext', 4, 7);
 		highlightSelection(ed, YELLOW);

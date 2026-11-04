@@ -2,6 +2,8 @@
  * Settings data model. No Obsidian imports so it can be unit tested.
  */
 
+import type { RecolorJournal } from './recolorJournal';
+
 export interface HighlightColor {
 	/** Display name, shown in the picker and in command names. */
 	name: string;
@@ -21,6 +23,8 @@ export interface ColorHighlighterSettings {
 	 * (see `paletteChanges`); the plugin reconciles it on commit and on startup.
 	 */
 	committed: string[];
+	/** A palette recolor pass that has not finished (crash, failed notes); resumed on startup. */
+	journal: RecolorJournal | null;
 }
 
 /** Alpha appended to every highlight color (33%). Not user-editable. */
@@ -52,6 +56,7 @@ export const DEFAULT_SETTINGS: ColorHighlighterSettings = {
 	lastUsedIndex: 0,
 	autoShow: true,
 	committed: DEFAULT_COLORS.map((c) => c.color),
+	journal: null,
 };
 
 const HEX_RE = /^#(?:[0-9a-f]{6}|[0-9a-f]{8})$/i;
@@ -93,7 +98,7 @@ export function sanitizeSettings(raw: unknown): ColorHighlighterSettings {
 		return isValidHexColor(v) ? withHighlightAlpha(v) : c.color;
 	});
 
-	return { colors, lastUsedIndex, autoShow, committed };
+	return { colors, lastUsedIndex, autoShow, committed, journal: sanitizeJournal(data.journal) };
 }
 
 /**
@@ -180,4 +185,29 @@ export function uniqueRgb(rgb: string, others: readonly string[]): { rgb: string
 export function findDuplicateSlot(colors: readonly HighlightColor[], index: number, rgb: string): number {
 	const target = rgb.slice(0, 7).toUpperCase();
 	return colors.findIndex((c, i) => i !== index && c.color.slice(0, 7).toUpperCase() === target);
+}
+
+const isStringArray = (v: unknown): v is string[] => Array.isArray(v) && v.every((x) => typeof x === 'string');
+
+/** A saved journal, or null when it is missing or malformed. */
+export function sanitizeJournal(raw: unknown): RecolorJournal | null {
+	if (typeof raw !== 'object' || raw === null) return null;
+	const j = raw as Record<string, unknown>;
+	const map = j.map;
+	if (typeof j.device !== 'string' || j.device === '') return null;
+	if (!Array.isArray(map) || !map.every((p) => Array.isArray(p) && p.length === 2 && isValidHexColor(p[0]) && isValidHexColor(p[1]))) return null;
+	if (!isStringArray(j.from) || !isStringArray(j.to) || !isStringArray(j.done)) return null;
+	const fly = j.inflight as Record<string, unknown> | null | undefined;
+	const inflight =
+		fly && typeof fly.path === 'string' && typeof fly.before === 'string' && typeof fly.after === 'string'
+			? { path: fly.path, before: fly.before, after: fly.after }
+			: null;
+	return {
+		device: j.device,
+		map: (map as [string, string][]).map(([a, b]) => [a.toUpperCase(), b.toUpperCase()] as [string, string]),
+		from: j.from,
+		to: j.to,
+		done: j.done,
+		inflight,
+	};
 }

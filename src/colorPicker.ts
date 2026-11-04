@@ -139,7 +139,15 @@ export function openColorPicker(
 				anchor = null;
 			}
 		}
-		const editorRect = (cm?.dom ?? document.body).getBoundingClientRect();
+		// The editor area without its scrollbar: the popover must not cover the scrollbar.
+		const scroller = cm?.scrollDOM;
+		const sr = (scroller ?? document.body).getBoundingClientRect();
+		const editorRect = {
+			left: sr.left,
+			top: sr.top,
+			right: scroller ? sr.left + scroller.clientWidth : sr.right,
+			bottom: sr.bottom,
+		};
 		popover.mount(anchor, editorRect);
 
 		/** Keys of the picker itself. `manual` = Cmd+H mode (swallows typing, Space/Backspace/E are picker keys). */

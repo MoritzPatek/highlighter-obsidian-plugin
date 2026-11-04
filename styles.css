@@ -109,6 +109,11 @@
 	font-size: 11px;
 }
 
+.color-highlighter-popover__caption[hidden],
+.color-highlighter-popover__editor[hidden] {
+	display: none;
+}
+
 /* Pencil: opens the color editor */
 .color-highlighter-popover .color-highlighter-popover__edit.color-highlighter-popover__edit {
 	display: grid;
@@ -145,7 +150,7 @@
 	outline: 2px solid var(--interactive-accent);
 	outline-offset: 2px;
 }
-.color-highlighter-popover__edit[aria-expanded='true'] {
+.color-highlighter-popover .color-highlighter-popover__edit.color-highlighter-popover__edit[aria-expanded='true'] {
 	color: var(--interactive-accent);
 }
 

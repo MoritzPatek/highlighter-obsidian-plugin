@@ -23,7 +23,8 @@ const BG_RE = /(background(?:-color)?\s*:\s*)(#[0-9a-f]{6}(?:[0-9a-f]{2})?)/gi;
  */
 export function recolorEdits(text: string, map: ReadonlyMap<string, string>): Replacement[] {
 	if (map.size === 0 || !/<mark/i.test(text)) return [];
-	const code = codeRanges(text);
+	// Fences at any indent count as code (also fences nested in list items): leaving a mark alone is the safe mistake.
+	const code = codeRanges(text, null, true);
 	const out: Replacement[] = [];
 	let m: RegExpExecArray | null;
 	MARK_STYLE_RE.lastIndex = 0;

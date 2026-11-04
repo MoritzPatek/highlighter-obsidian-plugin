@@ -81,6 +81,25 @@ describe('computePopoverPosition', () => {
 	});
 });
 
+describe('computePopoverPosition clamps to the editor, not the window', () => {
+	const popup = { width: 288, height: 300 };
+	const viewport = { width: 1400, height: 900 };
+	it('stays left of the editor right edge (scrollbar excluded)', () => {
+		const editor = { left: 300, top: 50, right: 985, bottom: 880 };
+		const p = computePopoverPosition({ anchor: { left: 900, top: 200, bottom: 220 }, editor, popup, viewport });
+		expect(p.left + popup.width).toBeLessThanOrEqual(985 - 8);
+	});
+	it('stays right of the editor left edge', () => {
+		const editor = { left: 300, top: 50, right: 985, bottom: 880 };
+		const p = computePopoverPosition({ anchor: { left: 100, top: 200, bottom: 220 }, editor, popup, viewport });
+		expect(p.left).toBe(308);
+	});
+	it('prefers the left edge when the editor is narrower than the popover', () => {
+		const editor = { left: 0, top: 0, right: 200, bottom: 800 };
+		expect(computePopoverPosition({ anchor: { left: 50, top: 100, bottom: 120 }, editor, popup, viewport }).left).toBe(8);
+	});
+});
+
 describe('shouldAutoShow', () => {
 	const ok: AutoShowInput = {
 		enabled: true,

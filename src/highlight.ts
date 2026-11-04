@@ -150,10 +150,12 @@ export interface Fence {
 }
 
 const FENCE_OPEN_RE = /^ {0,3}(`{3,}|~{3,})(.*)$/;
+/** Fence at any indent (e.g. nested in a list item). Used where wrongly treating text as code is the safer mistake. */
+const FENCE_OPEN_ANY_RE = /^[ \t]*(`{3,}|~{3,})(.*)$/;
 
 /** Advance the fence state over one line (CommonMark: same char, at least as long, indent <= 3, nothing else). */
-function stepFence(line: string, fence: Fence | null): Fence | null {
-	const m = FENCE_OPEN_RE.exec(line);
+function stepFence(line: string, fence: Fence | null, anyIndent = false): Fence | null {
+	const m = (anyIndent ? FENCE_OPEN_ANY_RE : FENCE_OPEN_RE).exec(line);
 	if (!m) return fence;
 	const run = m[1] as string;
 	const rest = m[2] as string;
@@ -166,14 +168,14 @@ function stepFence(line: string, fence: Fence | null): Fence | null {
 }
 
 /** Fenced blocks and inline code spans in `text`. An unclosed fence runs to the end. */
-export function codeRanges(text: string, fence: Fence | null = null): Range[] {
+export function codeRanges(text: string, fence: Fence | null = null, anyIndent = false): Range[] {
 	const out: Range[] = [];
 	let pos = 0;
 	let state = fence;
 	let fenceStart = fence ? 0 : -1;
 	for (const line of text.split('\n')) {
 		const lineEnd = pos + line.length;
-		const next = stepFence(line, state);
+		const next = stepFence(line, state, anyIndent);
 		if (!state && next) fenceStart = pos;
 		else if (state && !next) {
 			out.push({ start: fenceStart, end: lineEnd, fenced: true });
@@ -223,6 +225,27 @@ export function selectionTouchesCode(
 /** Formatting runs on one line: code, bold, strike, italic. `ml` is the marker length. */
 const FORMAT_RE =
 	/`[^`\n]+`|(\*\*|__|~~)(?!\s)[^\n]*?(?<!\s)\1|(?<![*\w])\*(?![\s*])[^\n*]*?(?<![\s*])\*(?!\*)|(?<![\w])_(?![\s_])[^\n_]*?(?<![\s_])_(?!\w)/g;
+
+/**
+ * UTF-16 length of the highlight or formatting element that starts `rest`
+ * (a `<mark>`, a native `==x==`, a bold/italic/strike/code run, or at least a run
+ * of `*` `_` `~` markers), or 0 when `rest` starts with ordinary text. Used to
+ * park the caret behind such a neighbour, because a caret touching it makes
+ * Live Preview reveal its raw markup.
+ */
+export function neighborLength(rest: string): number {
+	let m = /^<mark(?:\s[^>]*)?>[^\n]*?<\/mark>/i.exec(rest);
+	if (m) return m[0].length;
+	m = new RegExp('^' + NATIVE_SRC).exec(rest);
+	if (m) return m[0].length;
+	if (/^[*_~`]/.test(rest)) {
+		m = new RegExp('^(?:' + FORMAT_RE.source + ')').exec(rest);
+		if (m) return m[0].length;
+		m = /^[*_~`]+/.exec(rest);
+		if (m) return m[0].length;
+	}
+	return 0;
+}
 
 /**
  * Widen [a, b) so it never cuts through a formatting marker pair: a run that

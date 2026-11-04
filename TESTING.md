@@ -24,6 +24,10 @@ Open **Start here** and go through it. It covers highlighting, recoloring, remov
 
 The sample notes are meant to be changed. To get a clean copy back: `git checkout test-vault` (this restores the notes, not the plugin files).
 
+## Palette edits rewrite notes
+
+Editing a color in the picker or in the settings rewrites every note of the vault that uses it (see the README). The test vault is meant for that, but do not point a dev build at a real vault without a backup.
+
 ## Notes
 
 - `test-vault/.obsidian/plugins/` is not committed; it is created by `npm run test-vault`.

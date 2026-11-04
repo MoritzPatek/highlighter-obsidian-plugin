@@ -16,6 +16,7 @@ import {
 	type TextEdit,
 } from './highlight';
 import { firstCharLength } from './pickerLogic';
+import { neighborLength } from './highlight';
 
 export interface Pos {
 	line: number;
@@ -98,10 +99,17 @@ export function applyEdit(
 		if (idx >= 0) {
 			end = edit.from + idx + closing.length;
 			const pos = at(end);
-			const step = firstCharLength(editor.getLine(pos.line).slice(pos.ch));
+			const rest = editor.getLine(pos.line).slice(pos.ch);
+			// Skip highlights / formatting that touch the new mark: a caret next to them reveals their markup.
+			let skipped = 0;
+			for (let n = neighborLength(rest); n > 0 && skipped < rest.length; n = neighborLength(rest.slice(skipped))) {
+				skipped += n;
+			}
+			end += skipped;
+			const step = firstCharLength(rest.slice(skipped));
 			if (step > 0) end += step; // one whole character (code point plus combining marks)
 			else if (pos.line + 1 < editor.lineCount()) end += 1; // the newline: start of next line
-			// else: end of the note, the caret stays next to </mark> and Live Preview shows the source
+			// else: end of the note, the caret stays next to the markup and Live Preview shows the source
 		}
 	}
 	editor.setCursor(at(end));

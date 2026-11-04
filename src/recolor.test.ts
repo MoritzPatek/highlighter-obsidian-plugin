@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { recolorEdits, recolorMarks } from './recolor';
-import { findDuplicateSlot, paletteChanges, sanitizeSettings, uniqueRgb, DEFAULT_COLORS } from './settings';
+import { findDuplicateSlot, paletteChanges, sanitizeJournal, sanitizeSettings, uniqueRgb, DEFAULT_COLORS } from './settings';
 
 const mark = (c: string, t = 'x') => `<mark style="background: ${c};">${t}</mark>`;
 const map = (...pairs: [string, string][]) => new Map(pairs);
@@ -55,6 +55,23 @@ describe('recolorMarks', () => {
 	});
 });
 
+describe('recolorMarks skips fences nested in list items', () => {
+	const m = mark('#FFD60A55');
+	it('does not rewrite marks inside a fence indented under a list marker', () => {
+		for (const indent of ['  ', '    ', '\t']) {
+			const t = `- item\n${indent}\`\`\`\n${indent}${m}\n${indent}\`\`\`\n\n${m}`;
+			const r = recolorMarks(t, map(['#FFD60A55', '#000000AA']));
+			expect(r.count, JSON.stringify(indent)).toBe(1);
+			expect(r.text.startsWith(`- item\n${indent}\`\`\`\n${indent}${m}`)).toBe(true);
+			expect(r.text.endsWith(mark('#000000AA'))).toBe(true);
+		}
+	});
+	it('also skips ~~~ fences at any indent', () => {
+		const t = `1. a\n      ~~~\n      ${m}\n      ~~~`;
+		expect(recolorMarks(t, map(['#FFD60A55', '#000000AA'])).count).toBe(0);
+	});
+});
+
 describe('paletteChanges / uniqueRgb / findDuplicateSlot', () => {
 	it('lists only slots whose color changed', () => {
 		const colors = DEFAULT_COLORS.map((c) => ({ ...c }));
@@ -73,6 +90,24 @@ describe('paletteChanges / uniqueRgb / findDuplicateSlot', () => {
 	it('finds the other slot that uses a color', () => {
 		expect(findDuplicateSlot(DEFAULT_COLORS, 0, '#3ddc84')).toBe(1);
 		expect(findDuplicateSlot(DEFAULT_COLORS, 1, '#3ddc84')).toBe(-1);
+	});
+});
+
+describe('sanitizeJournal', () => {
+	const good = { device: 'd', map: [['#aaaaaa55', '#bbbbbb55']], from: ['#AAAAAA55'], to: ['#BBBBBB55'], done: ['a.md'], inflight: null };
+	it('accepts a well-formed journal and normalizes hex', () => {
+		expect(sanitizeJournal(good)?.map).toEqual([['#AAAAAA55', '#BBBBBB55']]);
+		expect(sanitizeJournal({ ...good, inflight: { path: 'a.md', before: 'x', after: 'y' } })?.inflight?.path).toBe('a.md');
+	});
+	it('rejects malformed journals', () => {
+		expect(sanitizeJournal(null)).toBeNull();
+		expect(sanitizeJournal({ ...good, device: '' })).toBeNull();
+		expect(sanitizeJournal({ ...good, map: [['x', 'y']] })).toBeNull();
+		expect(sanitizeJournal({ ...good, done: [1] })).toBeNull();
+	});
+	it('is part of sanitizeSettings', () => {
+		expect(sanitizeSettings({ journal: good }).journal?.device).toBe('d');
+		expect(sanitizeSettings({}).journal).toBeNull();
 	});
 });
 

@@ -42,6 +42,7 @@ describe('sanitizeSettings', () => {
 			lastUsedIndex: 3,
 			autoShow: false,
 			committed: DEFAULT_COLORS.map(() => '#11223355'),
+			journal: null,
 		};
 		expect(sanitizeSettings(saved)).toEqual(saved);
 	});
