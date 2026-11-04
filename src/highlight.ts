@@ -38,6 +38,10 @@
  *   Indented code blocks are not detected.
  */
 
+import { codeRanges, endsInsideFence, type Fence } from './blocks';
+import { paintableRuns } from './runs';
+export { codeRanges, endsInsideFence, type Fence };
+
 export interface TextEdit {
 	/** Start of the replaced range in the original text. */
 	from: number;
@@ -137,69 +141,7 @@ export function findHighlights(text: string, fence: Fence | null = null): Highli
 // Code and formatting markers
 // ---------------------------------------------------------------------------
 
-interface Range {
-	start: number;
-	end: number;
-	fenced: boolean;
-}
-
-/** An open fenced code block: its fence character and length. */
-export interface Fence {
-	char: '`' | '~';
-	len: number;
-}
-
-const FENCE_OPEN_RE = /^ {0,3}(`{3,}|~{3,})(.*)$/;
-/** Fence at any indent (e.g. nested in a list item). Used where wrongly treating text as code is the safer mistake. */
-const FENCE_OPEN_ANY_RE = /^[ \t]*(`{3,}|~{3,})(.*)$/;
-
-/** Advance the fence state over one line (CommonMark: same char, at least as long, indent <= 3, nothing else). */
-function stepFence(line: string, fence: Fence | null, anyIndent = false): Fence | null {
-	const m = (anyIndent ? FENCE_OPEN_ANY_RE : FENCE_OPEN_RE).exec(line);
-	if (!m) return fence;
-	const run = m[1] as string;
-	const rest = m[2] as string;
-	const char = run.charAt(0) as '`' | '~';
-	if (fence) {
-		return char === fence.char && run.length >= fence.len && rest.trim() === '' ? null : fence;
-	}
-	if (char === '`' && rest.includes('`')) return null; // not a fence: info string has a backtick
-	return { char, len: run.length };
-}
-
-/** Fenced blocks and inline code spans in `text`. An unclosed fence runs to the end. */
-export function codeRanges(text: string, fence: Fence | null = null, anyIndent = false): Range[] {
-	const out: Range[] = [];
-	let pos = 0;
-	let state = fence;
-	let fenceStart = fence ? 0 : -1;
-	for (const line of text.split('\n')) {
-		const lineEnd = pos + line.length;
-		const next = stepFence(line, state, anyIndent);
-		if (!state && next) fenceStart = pos;
-		else if (state && !next) {
-			out.push({ start: fenceStart, end: lineEnd, fenced: true });
-			fenceStart = -1;
-		} else if (!state && !next) {
-			const re = /(`+)(?!`)[^\n]*?(?<!`)\1(?!`)/g;
-			let m: RegExpExecArray | null;
-			while ((m = re.exec(line)) !== null) {
-				out.push({ start: pos + m.index, end: pos + m.index + m[0].length, fenced: false });
-			}
-		}
-		state = next;
-		pos = lineEnd + 1;
-	}
-	if (state) out.push({ start: fenceStart, end: text.length, fenced: true });
-	return out;
-}
-
-/** The fenced code block the end of `textBefore` is inside, or null. */
-export function endsInsideFence(textBefore: string): Fence | null {
-	let state: Fence | null = null;
-	for (const line of textBefore.split('\n')) state = stepFence(line, state);
-	return state;
-}
+// Fences and code ranges live in blocks.ts.
 
 /**
  * Would highlighting [from, to) touch code? True when an edge of the selection
@@ -487,10 +429,9 @@ function snapToContent(a: number, b: number, spans: HighlightSpan[]): [number, n
 }
 
 /**
- * The range a highlight really paints for the selection [from, to): the
- * selection with its edges moved out of highlight markup and widened over
- * formatting runs (`**`, `*`, `_`, `~~`, `` ` ``) it cuts into, so Markdown never
- * breaks. It does NOT widen over other highlights (pen semantics). Idempotent.
+ * The selection with its edges moved out of highlight markup (see `snapToContent`).
+ * Idempotent. It does not widen over highlights (pen semantics) or formatting: the
+ * selection is cut into plain-text runs when painting (see `highlightPieces`).
  */
 export function highlightRange(
 	text: string,
@@ -507,9 +448,31 @@ export function highlightRange(
 	for (let prev = ''; prev !== `${start},${end}`; ) {
 		prev = `${start},${end}`;
 		[start, end] = snapToContent(start, end, spans);
-		[start, end] = expandForMarkers(text, start, end, nested);
+		[start, end] = expandForMarkers(text, start, end, nested, false);
 	}
 	return [start, end];
+}
+
+/**
+ * The parts of the selection that are plain text: the selection minus block and
+ * inline syntax, cut into one piece per text run (see runs.ts). These are the
+ * ranges that get painted.
+ */
+export function highlightPieces(
+	text: string,
+	from: number,
+	to: number,
+	fence: Fence | null = null,
+	frontLines = 0,
+): [number, number][] {
+	const [a, b] = highlightRange(text, from, to, fence);
+	const pieces: [number, number][] = [];
+	for (const [rs, re] of paintableRuns(text, fence, frontLines)) {
+		const s = Math.max(a, rs);
+		const e = Math.min(b, re);
+		if (e > s && text.slice(s, e).trim() !== '') pieces.push([s, e]);
+	}
+	return pieces;
 }
 
 /** The text of [start, end) without highlight markup (native-stripped content of every overlapped span). */
@@ -587,6 +550,7 @@ export function applyHighlight(
 	to: number,
 	color: string,
 	fence: Fence | null = null,
+	frontLines = 0,
 ): TextEdit | null {
 	const [a, b] = normalizeRange(text, from, to);
 	const touched = touchedSpans(text, a, b, fence);
@@ -606,12 +570,39 @@ export function applyHighlight(
 		return { from: a, to: a, insert: tag + MARK_CLOSE, selFrom: pos, selTo: pos };
 	}
 
-	// Pen semantics: paint only [start, end); the rest of any highlight it cuts keeps its color.
+	// Every plain-text piece of the selection is painted on its own, so a highlight never contains syntax.
+	const pieces = highlightPieces(text, a, b, fence, frontLines);
+	let working = text;
+	const edits: TextEdit[] = [];
+	for (const [ps, pe] of [...pieces].reverse()) {
+		const e = paintPiece(working, ps, pe, color, fence);
+		if (!e) continue;
+		working = applyEdit(working, e);
+		edits.push(e); // right to left
+	}
+	if (edits.length === 0) return null;
+	const first = edits[edits.length - 1] as TextEdit; // leftmost
+	const last = edits[0] as TextEdit; // rightmost
+	const delta = (e: TextEdit) => e.insert.length - (e.to - e.from);
+	const total = working.length - text.length;
+	const from0 = first.from;
+	const to0 = last.to;
+	return {
+		from: from0,
+		to: to0,
+		insert: working.slice(from0, working.length - (text.length - to0)),
+		selFrom: first.selFrom,
+		selTo: last.selTo + (total - delta(last)),
+	};
+}
+
+/** Paint [start, end) (plain text only) and keep the rest of any highlight it cuts (pen). */
+function paintPiece(text: string, a: number, b: number, color: string, fence: Fence | null): TextEdit | null {
 	const [start, end] = highlightRange(text, a, b, fence);
 	if (start === end) return null;
 	const all = findHighlights(text, fence);
 	const spans = all.filter((sp) => sp.start < end && sp.end > start);
-	const wrapped = wrapText(plainInner(text, start, end, spans), linePrefixAt(text, start), color);
+	const wrapped = wrapText(plainInner(text, start, end, spans), 'x', color);
 	if (!wrapped.changed) return null;
 
 	const leftSpan = spans.find((sp) => sp.start < start);

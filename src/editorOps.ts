@@ -10,13 +10,14 @@ import {
 	findHighlights,
 	highlightRange,
 	removeHighlight,
-	selectionTouchesCode,
+	highlightPieces,
 	type Fence,
 	type HighlightState,
 	type TextEdit,
 } from './highlight';
 import { firstCharLength } from './pickerLogic';
 import { neighborLength } from './highlight';
+import { frontmatterEnd, frontmatterLinesIn } from './blocks';
 
 export interface Pos {
 	line: number;
@@ -43,8 +44,10 @@ export interface SelectionContext {
 	text: string;
 	from: number;
 	to: number;
-	/** The selection starts inside a fenced code block opened above. */
+	/** The selection starts inside a fenced block (code or math) opened above. */
 	fence: Fence | null;
+	/** Number of leading lines of `text` that are properties (frontmatter). */
+	frontLines: number;
 }
 
 /**
@@ -63,11 +66,24 @@ export function getSelectionContext(editor: EditorLike): SelectionContext {
 		from: editor.posToOffset(a) - base,
 		to: editor.posToOffset(b) - base,
 		fence: endsInsideFence(editor.getRange({ line: 0, ch: 0 }, startPos)),
+		frontLines: frontmatterLinesIn(a.line, documentFrontmatterEnd(editor)),
 	};
 }
 
-export function touchesCode(ctx: SelectionContext): boolean {
-	return selectionTouchesCode(ctx.text, ctx.from, ctx.to, ctx.fence);
+/** Last line of the note's properties block, or -1. Only the top of the note is read. */
+function documentFrontmatterEnd(editor: EditorLike): number {
+	if (editor.getLine(0).trimEnd() !== '---') return -1;
+	const lines = ['---'];
+	for (let i = 1; i < Math.min(editor.lineCount(), 400); i++) {
+		lines.push(editor.getLine(i));
+		if (frontmatterEnd(lines) >= 0) return i;
+	}
+	return -1;
+}
+
+/** True when the selection contains plain text a highlight can be painted on (a caret always can). */
+export function canPaint(ctx: SelectionContext): boolean {
+	return ctx.from === ctx.to || highlightPieces(ctx.text, ctx.from, ctx.to, ctx.fence, ctx.frontLines).length > 0;
 }
 
 export function getState(ctx: SelectionContext): HighlightState {
@@ -112,21 +128,38 @@ export function applyEdit(
 			// else: end of the note, the caret stays next to the markup and Live Preview shows the source
 		}
 	}
-	editor.setCursor(at(end));
+	// A caret inside a table row makes Live Preview open that cell's editor, which shows the raw
+	// <mark> source until you click away. Park the caret after the table instead.
+	const target = at(end);
+	if (mode === 'highlight' && isTableLine(editor.getLine(target.line))) {
+		let line = target.line;
+		while (line + 1 < editor.lineCount() && isTableLine(editor.getLine(line + 1))) line++;
+		if (line + 1 < editor.lineCount()) {
+			editor.setCursor({ line: line + 1, ch: 0 });
+			return;
+		}
+		editor.setCursor({ line, ch: editor.getLine(line).length });
+		return;
+	}
+	editor.setCursor(target);
 }
 
-/** Highlight the current selection. Returns 'code' when refused because it touches code. */
-export function highlightSelection(editor: EditorLike, color: string): 'ok' | 'code' {
+const isTableLine = (line: string) => /^[ \t]*(?:>[ \t]*)*\|/.test(line);
+
+/**
+ * Highlight the current selection. 'nothing' when it holds no plain text to paint
+ * (only code, math, links, properties, ...).
+ */
+export function highlightSelection(editor: EditorLike, color: string): 'ok' | 'nothing' {
 	const ctx = getSelectionContext(editor);
-	if (touchesCode(ctx)) return 'code';
-	applyEdit(editor, ctx, applyHighlight(ctx.text, ctx.from, ctx.to, color, ctx.fence));
+	if (!canPaint(ctx)) return 'nothing';
+	applyEdit(editor, ctx, applyHighlight(ctx.text, ctx.from, ctx.to, color, ctx.fence, ctx.frontLines));
 	return 'ok';
 }
 
-/** Remove highlights touched by the current selection. */
-export function removeSelectionHighlight(editor: EditorLike): 'ok' | 'code' {
+/** Remove highlights touched by the current selection (an eraser for a partial selection). */
+export function removeSelectionHighlight(editor: EditorLike): 'ok' {
 	const ctx = getSelectionContext(editor);
-	if (touchesCode(ctx)) return 'code';
 	applyEdit(editor, ctx, removeHighlight(ctx.text, ctx.from, ctx.to, ctx.fence), 'remove');
 	return 'ok';
 }

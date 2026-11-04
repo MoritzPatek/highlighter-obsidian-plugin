@@ -9,7 +9,7 @@ import {
 	getState,
 	highlightSelection,
 	removeSelectionHighlight,
-	touchesCode,
+	canPaint,
 } from './editorOps';
 import { shouldAutoShow } from './pickerLogic';
 import {
@@ -29,6 +29,10 @@ import {
 	sanitizeSettings,
 	type ColorHighlighterSettings,
 } from './settings';
+
+/** Shown when the selection has nothing a highlight can sit on. */
+const NOTHING_TO_HIGHLIGHT =
+	'Nothing to highlight here: code, math, links, tags and properties are left alone.';
 
 export default class ColorHighlighterPlugin extends Plugin {
 	settings: ColorHighlighterSettings = DEFAULT_SETTINGS;
@@ -242,7 +246,10 @@ export default class ColorHighlighterPlugin extends Plugin {
 
 	private async highlightWithPicker(editor: Editor, auto = false) {
 		const ctx = getSelectionContext(editor);
-		if (this.refuseInCode(touchesCode(ctx), auto)) return;
+		if (!canPaint(ctx)) {
+			if (!auto) new Notice(NOTHING_TO_HIGHLIGHT);
+			return;
+		}
 		const state = getState(ctx);
 		// Nothing selected and the caret is not inside a highlight: nothing to color.
 		if (!auto && ctx.from === ctx.to && !state.highlighted) {
@@ -297,18 +304,16 @@ export default class ColorHighlighterPlugin extends Plugin {
 		const color = this.settings.colors[index];
 		if (!color) return;
 		// Re-read the selection at apply time: it may have changed while the picker was open.
-		if (this.refuseInCode(highlightSelection(editor, color.color) === 'code', false)) return;
+		if (highlightSelection(editor, color.color) === 'nothing') {
+			new Notice(NOTHING_TO_HIGHLIGHT);
+			return;
+		}
 		this.settings.lastUsedIndex = index;
 		await this.saveSettings();
 	}
 
 	private removeSelectionHighlight(editor: Editor) {
-		this.refuseInCode(removeSelectionHighlight(editor) === 'code', false);
+		removeSelectionHighlight(editor);
 	}
 
-	/** Code is never highlighted. Shows a notice (unless `quiet`) and returns `touched`. */
-	private refuseInCode(touched: boolean, quiet: boolean): boolean {
-		if (touched && !quiet) new Notice("Can't highlight inside code.");
-		return touched;
-	}
 }

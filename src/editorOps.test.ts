@@ -15,55 +15,7 @@ import {
 } from './editorOps';
 import { findHighlights } from './highlight';
 import { DEFAULT_COLORS } from './settings';
-
-/** A string-backed fake of the Obsidian Editor methods we use. */
-class FakeEditor implements EditorLike {
-	sel: { from: number; to: number };
-	constructor(
-		public doc: string,
-		from: number,
-		to: number,
-	) {
-		this.sel = { from, to };
-	}
-	lineCount(): number {
-		return this.lines().length;
-	}
-	private lines() {
-		return this.doc.split('\n');
-	}
-	offsetToPos(offset: number): Pos {
-		const before = this.doc.slice(0, offset).split('\n');
-		return { line: before.length - 1, ch: (before[before.length - 1] as string).length };
-	}
-	posToOffset(pos: Pos): number {
-		const lines = this.lines();
-		let o = 0;
-		for (let i = 0; i < pos.line; i++) o += (lines[i] as string).length + 1;
-		return o + pos.ch;
-	}
-	getCursor(which: 'from' | 'to' | 'head' | 'anchor' = 'head'): Pos {
-		return this.offsetToPos(which === 'from' || which === 'anchor' ? this.sel.from : this.sel.to);
-	}
-	getLine(line: number): string {
-		return this.lines()[line] ?? '';
-	}
-	getRange(from: Pos, to: Pos): string {
-		return this.doc.slice(this.posToOffset(from), this.posToOffset(to));
-	}
-	replaceRange(text: string, from: Pos, to: Pos = from): void {
-		this.doc = this.doc.slice(0, this.posToOffset(from)) + text + this.doc.slice(this.posToOffset(to));
-	}
-	setSelection(anchor: Pos, head: Pos = anchor): void {
-		const a = this.posToOffset(anchor);
-		const b = this.posToOffset(head);
-		this.sel = { from: Math.min(a, b), to: Math.max(a, b) };
-	}
-	setCursor(pos: Pos): void {
-		const o = this.posToOffset(pos);
-		this.sel = { from: o, to: o };
-	}
-}
+import { FakeEditor } from './fakeEditor';
 
 const YELLOW = DEFAULT_COLORS[0]!.color;
 const plain = (s: string) => s.replace(/<mark[^>]*>|<\/mark>/g, '').replace(/==/g, '');
@@ -105,9 +57,9 @@ describe('editor glue with a fake editor', () => {
 		expect(ed.doc).toBe(doc);
 	});
 
-	it('refuses inside code', () => {
+	it('paints nothing inside code and reports it', () => {
 		const ed = new FakeEditor('```\nx = 1\n```', 5, 8);
-		expect(highlightSelection(ed, YELLOW)).toBe('code');
+		expect(highlightSelection(ed, YELLOW)).toBe('nothing');
 		expect(ed.doc).toBe('```\nx = 1\n```');
 	});
 
@@ -131,17 +83,18 @@ describe('editor glue with a fake editor', () => {
 		expect(ed.sel).toEqual({ from: 0, to: 1 });
 	});
 
-	it('expands the visible selection over a cut **bold** run, not over highlights; apply is unchanged by it', () => {
+	it('does not widen the visible selection over formatting or highlights; apply is unchanged by it', () => {
+		// Design change: markers are skipped, not included, so a cut **bold** run is no reason to widen.
 		const doc = 'x **bold** y ==nat== z';
 		const from = doc.indexOf('old');
 		const to = doc.indexOf(' y');
 		const direct = new FakeEditor(doc, from, to);
 		highlightSelection(direct, YELLOW);
 		const ed = new FakeEditor(doc, from, to);
-		expect(expandSelectionToTarget(ed)).toBe(true);
-		expect(ed.sel).toEqual({ from: doc.indexOf('**'), to });
+		expect(expandSelectionToTarget(ed)).toBe(false);
 		highlightSelection(ed, YELLOW);
 		expect(ed.doc).toBe(direct.doc);
+		expect(ed.doc).toBe(`x **b${'<mark style="background: ' + YELLOW + ';">'}old</mark>** y ==nat== z`);
 		// no widening over a highlight the selection only partly covers
 		const hl = new FakeEditor('a ==nat== b', 4, 6);
 		expect(expandSelectionToTarget(hl)).toBe(false);
@@ -190,6 +143,18 @@ describe('editor glue with a fake editor', () => {
 		const ed3 = new FakeEditor('one two~~gone~~', 4, 7);
 		highlightSelection(ed3, YELLOW);
 		expect(ed3.doc.slice(ed3.sel.from)).toBe('');
+	});
+
+	it('after painting in a table the caret is parked below the table, not in a cell', () => {
+		const doc = 'text\n\n| A | B |\n| - | - |\n| one | two |\n\nafter';
+		const from = doc.indexOf('one');
+		const ed = new FakeEditor(doc, from, from + 3);
+		highlightSelection(ed, YELLOW);
+		expect(ed.getCursor('head')).toEqual({ line: 5, ch: 0 });
+		// a table at the very end of the note: the caret goes to the end of its last row
+		const last = new FakeEditor('| A |\n| - |\n| one |', 14, 17);
+		highlightSelection(last, YELLOW);
+		expect(last.getCursor('head').line).toBe(2);
 	});
 
 	it('at the end of a line the caret goes to the start of the next line', () => {
@@ -244,7 +209,7 @@ describe('property: apply then remove over the sample notes', () => {
 							const res = highlightSelection(ed, color.color);
 							const after = ed.doc.split('\n');
 							const tag = `${file} line ${li + 1} [${f},${t}] ${color.name}`;
-							if (res === 'code') {
+							if (res === 'nothing') {
 								expect(ed.doc, tag).toBe(original);
 								continue;
 							}
@@ -282,7 +247,7 @@ describe('property: apply then remove over the sample notes', () => {
 				}
 			});
 			expect(checked).toBeGreaterThan(500);
-		});
+		}, 60000);
 	}
 });
 
@@ -308,7 +273,7 @@ describe('property: multi-line selections', () => {
 								const ed = new FakeEditor(original, f, t);
 								const res = highlightSelection(ed, color.color);
 								const tag = `${file} ${l1}:${c1} -> ${l2}:${c2}`;
-								if (res === 'code') continue;
+								if (res === 'nothing') continue;
 								const after = ed.doc.split('\n');
 								expect(after.length, tag).toBe(lines.length);
 								expect(after.slice(0, l1), tag).toEqual(lines.slice(0, l1));
@@ -327,7 +292,7 @@ describe('property: multi-line selections', () => {
 
 describe('pickerFocusIndex', () => {
 	const colors = DEFAULT_COLORS;
-	const ctx = (text: string, from: number, to: number) => ({ base: 0, text, from, to, fence: null });
+	const ctx = (text: string, from: number, to: number) => ({ base: 0, text, from, to, fence: null, frontLines: 0 });
 	const mk = (c: string, t: string) => `<mark style="background: ${c};">${t}</mark>`;
 	it('focuses the color of the one highlight the caret or selection is in', () => {
 		const t = `a ${mk('#3DDC8455', 'green')} b`;
@@ -351,7 +316,7 @@ describe('pickerFocusIndex', () => {
 });
 
 describe('pickerCurrentIndex', () => {
-	const ctx = (text: string, from: number, to: number) => ({ base: 0, text, from, to, fence: null });
+	const ctx = (text: string, from: number, to: number) => ({ base: 0, text, from, to, fence: null, frontLines: 0 });
 	it('is the palette index inside one palette-colored highlight, else -1', () => {
 		const t = `a <mark style="background: #FF5C8A55;">pink</mark> b`;
 		const at = t.indexOf('ink');

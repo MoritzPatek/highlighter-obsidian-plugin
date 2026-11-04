@@ -13,3 +13,5 @@ test-vault/.obsidian/core-plugins.json
 test-vault/.obsidian/appearance.json
 test-vault/.obsidian/graph.json
 dev/harness.js
+e2e/shots/
+e2e/results.json

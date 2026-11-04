@@ -31,9 +31,9 @@ Select the word **banana** in this line: I would like a banana today.
 - [ ] Dragging a new selection moves the popover to the new place. Clicking elsewhere closes it.
 - [ ] Settings -> Color Highlighter -> "Show picker when selecting text" off: selecting with the mouse no longer opens it. Cmd+H still does.
 
-- [ ] Select text inside `inline code` or a fenced code block and press Cmd+H: the notice "Can't highlight inside code." appears and nothing changes.
+- [ ] Select text that is only `inline code` or inside a fenced code block and press Cmd+H: the notice "Nothing to highlight here" appears and nothing changes. A selection that contains code and normal words paints only the words.
 - [ ] In a line like `if (a == b && c == d)`, select `b` and highlight: both `==` stay.
-- [ ] In `**bold** text`, select from inside the bold word into "text" and highlight: the `**` pair stays intact inside one highlight.
+- [ ] In `**bold** text`, select from inside the bold word into "text" and highlight: the `**` markers stay outside the highlights (the word and the text are painted separately); the whole note is covered by the automatic suites in `All formats.md` (see TESTING.md).
 
 ## 2. Pen: paint, split, recolor, never nest
 

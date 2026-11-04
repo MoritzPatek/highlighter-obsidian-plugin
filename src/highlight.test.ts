@@ -95,9 +95,11 @@ describe('applyHighlight: plain selection', () => {
 		expect(applyEdit('abc', edit)).toBe(`a${mark('bc')}`);
 	});
 
-	it('keeps markdown formatting inside the mark', () => {
+	// Design change, from real-Obsidian evidence: Live Preview shows the content of an inline <mark>
+	// literally, so Markdown syntax must never sit inside a mark. The mark goes inside the markers.
+	it('puts the mark inside the formatting markers, never around them', () => {
 		const { out } = apply('x **bold** y', '**bold**');
-		expect(out).toBe(`x ${mark('**bold**')} y`);
+		expect(out).toBe(`x **${mark('bold')}** y`);
 	});
 });
 
@@ -299,7 +301,8 @@ describe('applyHighlight: block structure', () => {
 	it('does not split on escaped pipes in table cells', () => {
 		const sel = '| a \\| b | c |';
 		const { out } = apply(sel, sel);
-		expect(out).toBe(`| ${mark('a \\| b')} | ${mark('c')} |`);
+		// the escaped pipe is syntax: each side of it is painted on its own
+		expect(out).toBe(`| ${mark('a')} \\| ${mark('b')} | ${mark('c')} |`);
 	});
 });
 
@@ -307,7 +310,10 @@ describe('applyHighlight: special characters', () => {
 	it('keeps HTML, ampersands and angle brackets untouched', () => {
 		const sel = 'a < b && c > d <b>bold</b> &amp;';
 		const { out } = apply(`x ${sel} y`, sel);
-		expect(out).toBe(`x ${mark(sel)} y`);
+		// the <b>..</b> element is HTML (left alone); the text around it is painted
+		// a literal < or > is never inside a mark either (Live Preview showed the raw tag when it was)
+		// an entity is left alone too: a mark decodes it, plain Live Preview text shows it literally
+		expect(out).toBe(`x ${mark('a')} < ${mark('b && c')} > ${mark('d')} <b>bold</b> &amp; y`);
 	});
 
 	it('does not interpret $ replacement patterns', () => {
@@ -321,9 +327,10 @@ describe('applyHighlight: special characters', () => {
 	});
 
 	it('keeps wiki links, emoji and quotes', () => {
+		// wikilinks and code spans are never painted (a mark inside them would not render)
 		const sel = '[[Note|alias]] "q" 🎉 `code`';
 		const { out } = apply(sel, sel);
-		expect(out).toBe(mark(sel));
+		expect(out).toBe(`[[Note|alias]] ${mark('"q" 🎉')} \`code\``);
 	});
 
 	it('writes whatever color string it is given', () => {
@@ -473,28 +480,32 @@ describe('review fixes: == in prose and code', () => {
 });
 
 describe('review fixes: formatting markers', () => {
-	it('expands a partial selection to the whole bold run', () => {
+	// Markers are never inside a mark and never cut: each text run on its own side of a marker is painted.
+	it('a partial selection across a bold marker paints both text runs separately', () => {
 		const t = '**bold** text';
 		const { out } = apply(t, 'bold** t');
-		expect(out).toBe(`${mark('**bold** t')}ext`);
+		expect(out).toBe(`**${mark('bold')}** ${mark('t')}ext`);
 	});
-	it('expands when the selection starts inside the opening marker', () => {
+	it('a selection starting inside the opening marker paints the content only', () => {
 		const t = 'a **bold** b';
 		const from = t.indexOf('**') + 1;
 		const edit = applyHighlight(t, from, t.indexOf('bold') + 2, Y) as TextEdit;
-		expect(applyEdit(t, edit)).toBe(`a ${mark('**bold**')} b`);
+		expect(applyEdit(t, edit)).toBe(`a **${mark('bo')}ld** b`);
 	});
 	it('handles italic, strike and code runs', () => {
-		expect(apply('x *it* y', 'it* y').out).toBe(`x ${mark('*it* y')}`);
-		expect(apply('x ~~gone~~ y', 'x ~~go').out).toBe(`${mark('x ~~gone~~')} y`);
-		expect(apply('x `c` y', 'x `').out).toBe(`${mark('x `c`')} y`);
+		expect(apply('x *it* y', 'it* y').out).toBe(`x *${mark('it')}* ${mark('y')}`);
+		expect(apply('x ~~gone~~ y', 'x ~~go').out).toBe(`${mark('x')} ~~${mark('go')}ne~~ y`);
+		expect(apply('x `c` y', 'x `').out).toBe(`${mark('x')} \`c\` y`);
 	});
 	it('leaves a selection strictly inside the run content alone', () => {
 		expect(apply('**bold text**', 'old').out).toBe(`**b${mark('old')} text**`);
 	});
 	it('does not mistake list stars or snake_case for markers', () => {
 		expect(apply('* item here', 'item').out).toBe(`* ${mark('item')} here`);
-		expect(apply('a snake_case_name b', 'case').out).toBe(`a snake_${mark('case')}_name b`);
+		// Design change from real-Obsidian evidence: a mark next to the underscores of snake_case_name turned
+		// them into emphasis (the underscores vanished), so such words are never painted.
+		expect(apply('a snake_case_name b', 'a snake_case_name b').out).toBe(`${mark('a')} snake_case_name ${mark('b')}`);
+		expect(applyHighlight('snake_case_name', 0, 15, Y)).toBeNull();
 	});
 });
 
@@ -506,7 +517,8 @@ describe('final fixes: remove respects code, CommonMark fences', () => {
 		expect(removeHighlight(t, 2, 2, fence3)).toBeNull();
 		expect(removeHighlight(t, 2, 2)).not.toBeNull(); // outside code it still works
 		expect(getHighlightState(t, 2, 2, fence3).highlighted).toBe(false);
-		expect(applyHighlight('abc', 0, 3, Y, fence3)).not.toBeNull(); // pure logic only ignores spans
+		// inside a fence there is nothing to paint (design change: fences are holes)
+		expect(applyHighlight('abc', 0, 3, Y, fence3)).toBeNull();
 	});
 	it('ignores ==x== inside a fence within the text', () => {
 		expect(removeHighlight('```\n==x==\n```', 6, 6)).toBeNull();
@@ -728,5 +740,5 @@ describe('property: pen semantics keep every other character\'s color', () => {
 			}
 		}
 		expect(checked).toBeGreaterThan(100);
-	});
+	}, 60000);
 });

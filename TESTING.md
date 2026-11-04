@@ -24,6 +24,11 @@ Open **Start here** and go through it. It covers highlighting, recoloring, remov
 
 The sample notes are meant to be changed. To get a clean copy back: `git checkout test-vault` (this restores the notes, not the plugin files).
 
+## Automatic suites
+
+- `npm test` includes `src/formats.test.ts`, which runs thousands of selections over `test-vault/All formats.md` (every Markdown construct) and checks that nothing breaks.
+- `npm run e2e` (see `e2e/README.md`) does the same inside a running Obsidian with real Live Preview and Reading view checks and screenshots. Both pass before a release.
+
 ## Palette edits rewrite notes
 
 Editing a color in the picker or in the settings rewrites every note of the vault that uses it (see the README). The test vault is meant for that, but do not point a dev build at a real vault without a backup.
