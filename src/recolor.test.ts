@@ -99,6 +99,12 @@ describe('sanitizeJournal', () => {
 		expect(sanitizeJournal(good)?.map).toEqual([['#AAAAAA55', '#BBBBBB55']]);
 		expect(sanitizeJournal({ ...good, inflight: { path: 'a.md', before: 'x', after: 'y' } })?.inflight?.path).toBe('a.md');
 	});
+	it('keeps attempts and abandoned notes, defaulting them for older journals', () => {
+		expect(sanitizeJournal({ ...good, attempts: { 'a.md': 2, bad: 'x' }, abandoned: ['z.md'] })?.attempts).toEqual({ 'a.md': 2 });
+		expect(sanitizeJournal({ ...good, attempts: { 'a.md': 2 }, abandoned: ['z.md'] })?.abandoned).toEqual(['z.md']);
+		expect(sanitizeJournal(good)?.attempts).toEqual({});
+		expect(sanitizeJournal(good)?.abandoned).toEqual([]);
+	});
 	it('rejects malformed journals', () => {
 		expect(sanitizeJournal(null)).toBeNull();
 		expect(sanitizeJournal({ ...good, device: '' })).toBeNull();

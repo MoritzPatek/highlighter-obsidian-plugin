@@ -2,7 +2,7 @@
 	"id": "color-highlighter",
 	"name": "Color Highlighter",
 	"version": "0.1.0",
-	"minAppVersion": "1.4.0",
+	"minAppVersion": "1.8.7",
 	"description": "Highlight selected text in five colors from a quick popup, with one hotkey. Highlights render in Reading view and Live Preview.",
 	"author": "MoritzPatek",
 	"authorUrl": "https://github.com/MoritzPatek",

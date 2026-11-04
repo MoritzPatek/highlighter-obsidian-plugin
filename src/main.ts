@@ -12,7 +12,14 @@ import {
 	touchesCode,
 } from './editorOps';
 import { shouldAutoShow } from './pickerLogic';
-import { journalAction, newJournal, runRecolorPass, type PassResult } from './recolorJournal';
+import {
+	composeJournal,
+	journalAction,
+	newJournal,
+	runRecolorPass,
+	type PassResult,
+	type RecolorJournal,
+} from './recolorJournal';
 import { recolorSummary, vaultIO } from './recolorVault';
 import { ColorHighlighterSettingTab } from './settingsTab';
 import {
@@ -172,43 +179,52 @@ export default class ColorHighlighterPlugin extends Plugin {
 
 	private async doCommitPalette() {
 		const device = this.deviceId();
-		const total: PassResult = { highlights: 0, notes: 0, failed: [] };
+		const total: PassResult = { highlights: 0, notes: 0, failed: [], gaveUp: [] };
+		const colors = () => this.settings.colors.map((c) => c.color);
+		const persist = async (j: RecolorJournal | null) => {
+			this.settings.journal = j;
+			await this.saveSettings();
+		};
 		// Edits made while a pass runs are picked up by the next round.
-		for (let round = 0; round < 3; round++) {
+		for (let round = 0; round < 4; round++) {
 			let journal = this.settings.journal;
 			const action = journalAction(journal, device);
 			if (action === 'discard') {
 				// Started on another device (data.json synced): never replay it here, just adopt the palette.
-				this.settings.journal = null;
-				this.settings.committed = this.settings.colors.map((c) => c.color);
-				await this.saveSettings();
+				this.settings.committed = colors();
+				await persist(null);
 				return;
 			}
 			if (action === 'none') {
 				const map = paletteChanges(this.settings.committed, this.settings.colors);
 				if (map.size === 0) break;
 				// Snapshot now: later edits must not change what this pass does or what `committed` becomes.
-				journal = newJournal(
-					device,
-					map,
-					this.settings.committed,
-					this.settings.colors.map((c) => c.color),
-				);
-				this.settings.journal = journal;
-				await this.saveSettings();
+				journal = newJournal(device, map, this.settings.committed, colors());
+				await persist(journal);
+			} else if (journal && paletteChanges(journal.to, this.settings.colors).size > 0) {
+				// New edits while an old pass is pending: fold them into it so they do not wait behind it.
+				const composed = composeJournal(journal, colors());
+				if (composed) {
+					journal = composed;
+					await persist(journal);
+				}
 			}
 			if (!journal) break;
-			const result = await runRecolorPass(journal, vaultIO(this.app), async (j) => {
-				this.settings.journal = j;
-				await this.saveSettings();
-			});
+			const result = await runRecolorPass(journal, vaultIO(this.app), persist.bind(null));
 			total.highlights += result.highlights;
 			total.notes += result.notes;
 			total.failed.push(...result.failed);
-			if (result.failed.length > 0) break; // stays pending; retried on the next commit or startup
+			total.gaveUp.push(...result.gaveUp);
+			if (result.failed.length > 0) {
+				if (paletteChanges(journal.to, this.settings.colors).size === 0) break; // retried on the next commit or startup
+				// The old pass cannot be composed with the new edits and still has failing notes:
+				// give those notes up (reported once) instead of letting them block the new palette.
+				journal.abandoned.push(...result.failed);
+				total.gaveUp.push(...result.failed);
+				total.failed = total.failed.filter((p) => !result.failed.includes(p));
+			}
 			this.settings.committed = [...journal.to];
-			this.settings.journal = null;
-			await this.saveSettings();
+			await persist(null);
 		}
 		const msg = recolorSummary(total);
 		if (msg) new Notice(msg);

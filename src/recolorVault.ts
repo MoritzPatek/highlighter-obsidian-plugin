@@ -39,6 +39,8 @@ export function vaultIO(app: App): RecolorIO {
 				for (const e of edits) {
 					editor.replaceRange(e.insert, editor.offsetToPos(e.from), editor.offsetToPos(e.to));
 				}
+				// "Done" must mean on disk: do not wait for the editor's debounced autosave.
+				if (edits.length > 0) await view.save();
 				return edits.length;
 			}
 			let count = 0;
@@ -52,6 +54,12 @@ export function vaultIO(app: App): RecolorIO {
 	};
 }
 
+/** Names of up to five notes, "a, b, c and 2 more". */
+function noteNames(paths: string[]): string {
+	const names = paths.slice(0, 5).map((p) => p.replace(/^.*\//, '').replace(/\.md$/, ''));
+	return names.join(', ') + (paths.length > 5 ? ` and ${paths.length - 5} more` : '');
+}
+
 export function recolorSummary(r: PassResult): string | null {
 	const parts: string[] = [];
 	if (r.highlights > 0) {
@@ -63,6 +71,9 @@ export function recolorSummary(r: PassResult): string | null {
 		parts.push(
 			`${r.failed.length} note${r.failed.length === 1 ? '' : 's'} could not be updated; the plugin will retry.`,
 		);
+	}
+	if (r.gaveUp.length > 0) {
+		parts.push(`Couldn't update ${r.gaveUp.length} note${r.gaveUp.length === 1 ? '' : 's'}: ${noteNames(r.gaveUp)}.`);
 	}
 	return parts.length ? parts.join(' ') : null;
 }

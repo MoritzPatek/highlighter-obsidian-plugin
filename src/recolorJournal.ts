@@ -27,7 +27,14 @@ export interface RecolorJournal {
 	 * between "written" and "recorded" is detected on resume.
 	 */
 	inflight: { path: string; before: string; after: string } | null;
+	/** Failed attempts per note. After MAX_ATTEMPTS a note is given up (reported once) so it cannot block later palette changes. */
+	attempts: Record<string, number>;
+	/** Notes given up on; skipped from then on. */
+	abandoned: string[];
 }
+
+/** Attempts per note before it is given up. */
+export const MAX_ATTEMPTS = 3;
 
 export interface RecolorIO {
 	/** Paths of all notes. */
@@ -41,8 +48,10 @@ export interface RecolorIO {
 export interface PassResult {
 	highlights: number;
 	notes: number;
-	/** Notes that could not be rewritten; they stay pending in the journal. */
+	/** Notes that could not be rewritten this time; they stay pending and are retried. */
 	failed: string[];
+	/** Notes given up on in this run (attempt cap reached); reported once, no longer pending. */
+	gaveUp: string[];
 }
 
 /** FNV-1a over the UTF-16 units; enough to tell "before" from "after". */
@@ -76,7 +85,7 @@ export function newJournal(
 	from: readonly string[],
 	to: readonly string[],
 ): RecolorJournal {
-	return { device, map: [...map], from: [...from], to: [...to], done: [], inflight: null };
+	return { device, map: [...map], from: [...from], to: [...to], done: [], inflight: null, attempts: {}, abandoned: [] };
 }
 
 const BATCH = 20;
@@ -94,16 +103,28 @@ export async function runRecolorPass(
 	const map = new Map(journal.map);
 	const safe = isReplaySafe(map);
 	const done = new Set(journal.done);
-	const result: PassResult = { highlights: 0, notes: 0, failed: [] };
+	const abandoned = new Set(journal.abandoned);
+	const result: PassResult = { highlights: 0, notes: 0, failed: [], gaveUp: [] };
+	const fail = (path: string) => {
+		const n = (journal.attempts[path] ?? 0) + 1;
+		journal.attempts[path] = n;
+		if (n >= MAX_ATTEMPTS) {
+			abandoned.add(path);
+			journal.abandoned.push(path);
+			result.gaveUp.push(path);
+		} else {
+			result.failed.push(path);
+		}
+	};
 	let unsaved = 0;
 
 	for (const path of io.files()) {
-		if (done.has(path)) continue;
+		if (done.has(path) || abandoned.has(path)) continue;
 		let data: string;
 		try {
 			data = await io.read(path);
 		} catch {
-			result.failed.push(path);
+			fail(path);
 			continue;
 		}
 		if (recolorEdits(data, map).length === 0) continue;
@@ -131,7 +152,7 @@ export async function runRecolorPass(
 		try {
 			count = await io.apply(path, map);
 		} catch {
-			result.failed.push(path);
+			fail(path);
 			journal.inflight = null;
 			continue;
 		}
@@ -159,4 +180,37 @@ function applyToText(text: string, map: ReadonlyMap<string, string>): string {
 		pos = e.to;
 	}
 	return out + text.slice(pos);
+}
+
+/**
+ * Fold new palette edits into a pending journal so they do not wait behind it.
+ * Notes already done carry the journal's `to` colors, pending ones still the
+ * `from` colors; one map brings both to `next`. Returns null when the two cannot
+ * be told apart (a `from` color equals a different slot's `to` color) or a note
+ * is mid-write; the caller then finishes the old journal first.
+ */
+export function composeJournal(journal: RecolorJournal, next: readonly string[]): RecolorJournal | null {
+	if (journal.inflight) return null;
+	const map = new Map<string, string>();
+	for (let i = 0; i < next.length; i++) {
+		const target = (next[i] as string).toUpperCase();
+		for (const src of [journal.from[i], journal.to[i]]) {
+			if (!src) continue;
+			const key = src.toUpperCase();
+			if (key === target) continue;
+			const existing = map.get(key);
+			if (existing !== undefined && existing !== target) return null;
+			map.set(key, target);
+		}
+	}
+	// A color that is a source for one slot but already the final color of another would be rewritten wrongly.
+	const finals = new Set(next.map((c) => c.toUpperCase()));
+	for (const key of map.keys()) if (finals.has(key)) return null;
+	return {
+		...journal,
+		map: [...map],
+		to: [...next],
+		done: [],
+		inflight: null,
+	};
 }

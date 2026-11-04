@@ -209,5 +209,15 @@ export function sanitizeJournal(raw: unknown): RecolorJournal | null {
 		to: j.to,
 		done: j.done,
 		inflight,
+		attempts: sanitizeAttempts(j.attempts),
+		abandoned: isStringArray(j.abandoned) ? j.abandoned : [],
 	};
+}
+
+function sanitizeAttempts(raw: unknown): Record<string, number> {
+	const out: Record<string, number> = {};
+	if (typeof raw === 'object' && raw !== null) {
+		for (const [k, v] of Object.entries(raw)) if (typeof v === 'number' && Number.isFinite(v)) out[k] = v;
+	}
+	return out;
 }

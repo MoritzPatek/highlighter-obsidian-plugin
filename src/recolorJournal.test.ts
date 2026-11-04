@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { recolorMarks } from './recolor';
 import {
+	MAX_ATTEMPTS,
+	composeJournal,
 	hashText,
 	isReplaySafe,
 	journalAction,
@@ -152,5 +154,78 @@ describe('recolor pass: failures, devices, hashing', () => {
 		await runRecolorPass(j, io, async () => undefined);
 		expect(disk['n.md']).toBe(mk(B));
 		expect(j.to).toEqual([B]);
+	});
+});
+
+describe('retry cap: a permanently failing note cannot block later changes', () => {
+	it('gives a note up after MAX_ATTEMPTS, reports it once, and the pass can complete', async () => {
+		const map = new Map([[A, B]]);
+		const files = { 'ok.md': mk(A), 'bad.md': mk(A) };
+		const { disk, io } = makeVault(files, ['bad.md']);
+		const j = newJournal('dev', map, [A], [B]);
+		const results = [];
+		for (let run = 0; run < MAX_ATTEMPTS + 1; run++) results.push(await runRecolorPass(j, io, async () => undefined));
+		expect(MAX_ATTEMPTS).toBe(3);
+		expect(results[0]!.failed).toEqual(['bad.md']);
+		expect(results[1]!.failed).toEqual(['bad.md']);
+		expect(results[2]!.failed).toEqual([]);
+		expect(results[2]!.gaveUp).toEqual(['bad.md']); // reported exactly once
+		expect(results[3]!.gaveUp).toEqual([]);
+		expect(results[3]!.failed).toEqual([]);
+		expect(j.abandoned).toEqual(['bad.md']);
+		expect(j.attempts['bad.md']).toBe(3);
+		expect(disk).toEqual({ 'ok.md': mk(B), 'bad.md': mk(A) });
+	});
+	it('a note that succeeds on a retry is not given up', async () => {
+		const map = new Map([[A, B]]);
+		const { disk, io } = makeVault({ 'flaky.md': mk(A) }, ['flaky.md']);
+		const j = newJournal('dev', map, [A], [B]);
+		await runRecolorPass(j, io, async () => undefined);
+		const { io: good } = makeVault({ 'flaky.md': mk(A) });
+		const r = await runRecolorPass(j, { ...io, apply: async (p, m) => { disk[p] = recolorMarks(disk[p] as string, m).text; return good ? 1 : 0; } }, async () => undefined);
+		expect(r.gaveUp).toEqual([]);
+		expect(disk['flaky.md']).toBe(mk(B));
+	});
+});
+
+describe('composeJournal: new edits do not wait behind a pending pass', () => {
+	it('brings done notes (to-colors) and pending notes (from-colors) to the newest palette', async () => {
+		const map = new Map([[A, B]]);
+		const files = { 'done.md': mk(A), 'pending.md': mk(A), 'other.md': mk('#999999AA') };
+		const { disk, io } = makeVault(files, ['pending.md']);
+		const j = newJournal('dev', map, [A], [B]);
+		await runRecolorPass(j, io, async () => undefined); // done.md -> B, pending.md fails
+		expect(disk['done.md']).toBe(mk(B));
+		const composed = composeJournal(j, [C]) as RecolorJournal;
+		expect(composed).not.toBeNull();
+		expect(composed.done).toEqual([]);
+		expect(composed.from).toEqual([A]);
+		expect(composed.to).toEqual([C]);
+		expect(Object.fromEntries(composed.map)).toEqual({ [A]: C, [B]: C });
+		const { io: io2 } = makeVault({});
+		const run = await runRecolorPass(composed, { ...io2, files: io.files, read: io.read, apply: async (p, m) => { const r = recolorMarks(disk[p] as string, m); disk[p] = r.text; return r.count; } }, async () => undefined);
+		expect(run.failed).toEqual([]);
+		expect(disk).toEqual({ 'done.md': mk(C), 'pending.md': mk(C), 'other.md': mk('#999999AA') });
+	});
+	it('keeps the attempt counters and abandoned notes', () => {
+		const j = newJournal('dev', new Map([[A, B]]), [A], [B]);
+		j.attempts['x.md'] = 2;
+		j.abandoned.push('dead.md');
+		const c = composeJournal(j, [C]) as RecolorJournal;
+		expect(c.attempts).toEqual({ 'x.md': 2 });
+		expect(c.abandoned).toEqual(['dead.md']);
+	});
+	it('refuses to compose when colors cannot be told apart, or a note is mid-write', () => {
+		// from A, to B (slot 1); slot 2 goes from B to A: B is both a done-color and a from-color
+		const swap = newJournal('dev', new Map([[A, B], [B, A]]), [A, B], [B, A]);
+		expect(composeJournal(swap, [C, '#DDDDDD55'])).toBeNull();
+		const mid = newJournal('dev', new Map([[A, B]]), [A], [B]);
+		mid.inflight = { path: 'n.md', before: 'x', after: 'y' };
+		expect(composeJournal(mid, [C])).toBeNull();
+	});
+	it('an unchanged slot keeps its journal target', () => {
+		const j = newJournal('dev', new Map([[A, B]]), [A], [B]);
+		const c = composeJournal(j, [B]) as RecolorJournal;
+		expect(Object.fromEntries(c.map)).toEqual({ [A]: B });
 	});
 });
