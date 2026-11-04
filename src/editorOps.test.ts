@@ -367,7 +367,7 @@ describe('property: multi-line selections', () => {
 
 describe('pickerFocusIndex', () => {
 	const colors = DEFAULT_COLORS;
-	const ctx = (text: string, from: number, to: number) => ({ base: 0, text, from, to, fence: null, frontLines: 0 });
+	const ctx = (text: string, from: number, to: number) => ({ base: 0, text, from, to, fence: null, frontLines: 0, block: null });
 	const mk = (c: string, t: string) => `<mark style="background: ${c};">${t}</mark>`;
 	it('focuses the color of the one highlight the caret or selection is in', () => {
 		const t = `a ${mk('#3DDC8455', 'green')} b`;
@@ -391,12 +391,80 @@ describe('pickerFocusIndex', () => {
 });
 
 describe('pickerCurrentIndex', () => {
-	const ctx = (text: string, from: number, to: number) => ({ base: 0, text, from, to, fence: null, frontLines: 0 });
+	const ctx = (text: string, from: number, to: number) => ({ base: 0, text, from, to, fence: null, frontLines: 0, block: null });
 	it('is the palette index inside one palette-colored highlight, else -1', () => {
 		const t = `a <mark style="background: #FF5C8A55;">pink</mark> b`;
 		const at = t.indexOf('ink');
 		expect(pickerCurrentIndex(ctx(t, at, at), DEFAULT_COLORS)).toBe(3);
 		expect(pickerCurrentIndex(ctx(t, 0, 1), DEFAULT_COLORS)).toBe(-1);
 		expect(pickerCurrentIndex(ctx('==n==', 2, 2), DEFAULT_COLORS)).toBe(-1);
+	});
+});
+
+describe('selection on deeply nested list items (regression: the lines above are needed)', () => {
+	const NOTE = [
+		'- level 1',
+		'    - level 2',
+		'        - level 3 item',
+		'            - level 4 item',
+		'\t- tab level 2',
+		'\t\t- tab level 3 item',
+		'\t\t\t- tab level 4 item',
+		'1. numbered',
+		'    1. nested numbered',
+		'        1. level 3 numbered',
+		'        - [ ] level 3 task',
+		'            - [x] level 4 task',
+	].join('\n');
+	const lines = NOTE.split('\n');
+	for (const [i, word] of [
+		[2, 'level 3 item'],
+		[3, 'level 4 item'],
+		[5, 'tab level 3 item'],
+		[6, 'tab level 4 item'],
+		[9, 'level 3 numbered'],
+		[10, 'level 3 task'],
+		[11, 'level 4 task'],
+	] as [number, string][]) {
+		it(`paints only line ${i + 1} ("${word}") when the selection starts on it`, () => {
+			const from = NOTE.indexOf(lines[i] as string) + (lines[i] as string).indexOf(word);
+			const ed = new FakeEditor(NOTE, from, from + word.length);
+			expect(highlightSelection(ed, YELLOW)).toBe('ok');
+			expect(ed.doc).toContain(`<mark style="background: ${YELLOW};">${word}</mark>`);
+		});
+	}
+	it('a whole deep bullet line selected from its start is painted without its marker', () => {
+		const i = 3;
+		const from = NOTE.indexOf(lines[i] as string);
+		const ed = new FakeEditor(NOTE, from, from + (lines[i] as string).length);
+		expect(highlightSelection(ed, YELLOW)).toBe('ok');
+		expect(ed.doc).toContain('            - <mark');
+	});
+	it('an indented code block after a paragraph and a blank line is still skipped', () => {
+		const doc = 'A paragraph.\n\n    code line one\n    code line two\n\nafter';
+		const from = doc.indexOf('code line one');
+		const ed = new FakeEditor(doc, from, from + 'code line one'.length);
+		expect(highlightSelection(ed, YELLOW)).toBe('nothing');
+		const second = doc.indexOf('code line two');
+		const ed2 = new FakeEditor(doc, second, second + 4);
+		expect(highlightSelection(ed2, YELLOW)).toBe('nothing');
+	});
+	it('an indented code block after a list ends is skipped, but not while the list continues', () => {
+		const doc = '- item\n\nplain\n\n    code\n';
+		const from = doc.indexOf('code');
+		expect(highlightSelection(new FakeEditor(doc, from, from + 4), YELLOW)).toBe('nothing');
+	});
+	it('indented code inside a blockquote is skipped; indented list content in a quote is not', () => {
+		const code = '> quote\n>\n>     code in quote\n';
+		const from = code.indexOf('code in');
+		expect(highlightSelection(new FakeEditor(code, from, from + 7), YELLOW)).toBe('nothing');
+		const list = '> - item\n>\n>     second paragraph of the item\n';
+		const f2 = list.indexOf('second');
+		expect(highlightSelection(new FakeEditor(list, f2, f2 + 6), YELLOW)).toBe('ok');
+	});
+	it('properties and fences above do not confuse the block state', () => {
+		const doc = '---\ntitle: x\n---\n\n```\n    in a fence\n```\n\n- a\n    - b\n        - c deep\n';
+		const from = doc.indexOf('c deep');
+		expect(highlightSelection(new FakeEditor(doc, from, from + 6), YELLOW)).toBe('ok');
 	});
 });

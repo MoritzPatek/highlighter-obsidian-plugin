@@ -18,6 +18,7 @@ import {
 import { firstCharLength } from './pickerLogic';
 import { neighborLength } from './highlight';
 import { frontmatterEnd, frontmatterLinesIn } from './blocks';
+import { blockStateAfter, type BlockState } from './runs';
 
 export interface Pos {
 	line: number;
@@ -50,6 +51,8 @@ export interface SelectionContext {
 	fence: Fence | null;
 	/** Number of leading lines of `text` that are properties (frontmatter). */
 	frontLines: number;
+	/** What the lines above the selection say about indented code and list items. */
+	block: BlockState | null;
 }
 
 /**
@@ -69,7 +72,15 @@ export function getSelectionContext(editor: EditorLike): SelectionContext {
 		to: editor.posToOffset(b) - base,
 		fence: endsInsideFence(editor.getRange({ line: 0, ch: 0 }, startPos)),
 		frontLines: frontmatterLinesIn(a.line, documentFrontmatterEnd(editor)),
+		block: blockStateAbove(editor, a.line),
 	};
+}
+
+/** Block state (indented code / list context) at the start of `line`, from the lines above it. */
+function blockStateAbove(editor: EditorLike, line: number): BlockState {
+	const above: string[] = [];
+	for (let i = 0; i < line; i++) above.push(editor.getLine(i));
+	return blockStateAfter(above, documentFrontmatterEnd(editor));
 }
 
 /** Last line of the note's properties block, or -1. Only the top of the note is read. */
@@ -85,7 +96,7 @@ function documentFrontmatterEnd(editor: EditorLike): number {
 
 /** True when the selection contains plain text a highlight can be painted on (a caret always can). */
 export function canPaint(ctx: SelectionContext): boolean {
-	return ctx.from === ctx.to || highlightPieces(ctx.text, ctx.from, ctx.to, ctx.fence, ctx.frontLines).length > 0;
+	return ctx.from === ctx.to || highlightPieces(ctx.text, ctx.from, ctx.to, ctx.fence, ctx.frontLines, ctx.block).length > 0;
 }
 
 export function getState(ctx: SelectionContext): HighlightState {
@@ -195,7 +206,7 @@ const isTableLine = (line: string) => /^[ \t]*(?:>[ \t]*)*\|/.test(line);
 export function highlightSelection(editor: EditorLike, color: string): 'ok' | 'nothing' {
 	const ctx = getSelectionContext(editor);
 	if (!canPaint(ctx)) return 'nothing';
-	applyEdit(editor, ctx, applyHighlight(ctx.text, ctx.from, ctx.to, color, ctx.fence, ctx.frontLines));
+	applyEdit(editor, ctx, applyHighlight(ctx.text, ctx.from, ctx.to, color, ctx.fence, ctx.frontLines, ctx.block));
 	return 'ok';
 }
 

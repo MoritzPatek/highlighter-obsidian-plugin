@@ -156,4 +156,8 @@ export const cases = [
 	{ id: 'starts-inside-native', section: 'Large selections', find: 'native highlight== in a sentence and another ==second native one== here.', color: 3 },
 	{ id: 'indented-code-only', section: 'Indented code', find: 'indented code line one with **stars** and [[a link]]\n    indented code line two', color: 4, nothing: true },
 	{ id: 'indented-code-across', section: 'Indented code', find: 'A paragraph before the indented code block.\n\n    indented code line one', color: 5 },
+	// --- selection on a deep nested bullet (the lines above are needed to tell it from indented code)
+	{ id: 'deep-bullet-level3', section: 'Deep lists', find: 'Deeper nested item', color: 2, painted: ['Deeper nested item'] },
+	{ id: 'deep-bullet-level4', section: 'Deep lists', find: 'Deepest nested item', color: 3, painted: ['Deepest nested item'] },
+	{ id: 'deep-bullet-whole-line', section: 'Deep lists', find: '        - Deepest nested item', color: 4, painted: ['Deepest nested item'] },
 ];

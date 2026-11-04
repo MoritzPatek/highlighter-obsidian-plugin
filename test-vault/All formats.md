@@ -100,6 +100,7 @@ Special characters: 3 < 5 && 7 > 2, an & ampersand, &amp; an entity, and "quotes
 - Dash item two with **bold**
   - Nested dash item
     - Deeper nested item
+        - Deepest nested item
 * Star item one
 * Star item two
 + Plus item one
