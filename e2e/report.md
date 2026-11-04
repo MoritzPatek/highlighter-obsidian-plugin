@@ -1,8 +1,8 @@
 # End-to-end report
 
-Run: 2026-11-04T12:40:37.918Z against "Sample text - Color Highlighter Test Vault - Obsidian 1.15.0"
+Run: 2026-11-04T16:36:51.524Z against "Sample text - Color Highlighter Test Vault - Obsidian 1.15.0"
 
-**80 of 80 cases pass.**
+**92 of 93 cases pass.**
 
 | Case | Section | Selected via | Source | Live Preview | Reading view | Problems | Screenshots |
 |---|---|---|---|---|---|---|---|
@@ -86,3 +86,16 @@ Run: 2026-11-04T12:40:37.918Z against "Sample text - Color Highlighter Test Vaul
 | mouse-plain | Mouse | mouse | pass | pass | pass |  |  |
 | mouse-bold | Mouse | mouse | pass | pass | pass |  |  |
 | mouse-heading | Mouse | mouse | pass | pass | pass |  |  |
+| mouse-list | Mouse | mouse | pass | pass | pass |  |  |
+| mouse-emoji | Mouse | mouse | pass | pass | pass |  |  |
+| mouse-long-line | Mouse | mouse | pass | pass | pass |  |  |
+| mouse-native | Mouse | mouse | pass | pass | pass |  |  |
+| mouse-two-lines | Mouse | mouse | pass | pass | pass |  |  |
+| eof-sentence-newline | End of note | api | pass | pass | pass |  |  |
+| eof-sentence-no-newline | End of note | api | pass | pass | pass |  |  |
+| eof-last-word | End of note | api | pass | pass | pass |  |  |
+| eof-last-word-newline | End of note | api | pass | pass | pass |  |  |
+| eof-recolor-last-mark | End of note | api | pass | pass | pass |  |  |
+| eof-pen-last-mark | End of note | api | pass | pass | pass |  |  |
+| mouse-quote | Mouse | mouse | pass | pass | pass |  |  |
+| mouse-callout-body | Mouse | mouse | FAIL | pass | pass | the picker did not open; changed lines:  | shots/mouse-callout-body-source.png |
