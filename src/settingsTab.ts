@@ -1,6 +1,13 @@
-import { App, Platform, PluginSettingTab, Setting } from 'obsidian';
+import { App, Notice, Platform, PluginSettingTab, Setting } from 'obsidian';
 import type ColorHighlighterPlugin from './main';
-import { DEFAULT_COLORS, MAX_NAME_LENGTH, splitColor, withHighlightAlpha } from './settings';
+import {
+	DEFAULT_COLORS,
+	MAX_NAME_LENGTH,
+	findDuplicateSlot,
+	splitColor,
+	uniqueRgb,
+	withHighlightAlpha,
+} from './settings';
 
 /** Settings tab: five rows (preview chip, name, opaque color) and a reset button. */
 export class ColorHighlighterSettingTab extends PluginSettingTab {
@@ -63,12 +70,25 @@ export class ColorHighlighterSettingTab extends PluginSettingTab {
 
 			setting.addColorPicker((picker) => {
 				picker.setValue(splitColor(entry.color).rgb);
+				// Live while dragging in the picker: preview and save only. The notes are
+				// recolored once, when the picker is released (`change`, below).
 				picker.onChange(async (value) => {
-					entry.color = withHighlightAlpha(value);
+					const colors = this.plugin.settings.colors;
+					const dup = findDuplicateSlot(colors, index, value);
+					const { rgb, nudged } = uniqueRgb(
+						value,
+						colors.filter((_c, k) => k !== index).map((c) => c.color),
+					);
+					if (nudged) {
+						picker.setValue(rgb);
+						new Notice(`Same as ${colors[dup]?.name ?? 'another color'}: shade adjusted slightly.`);
+					}
+					entry.color = withHighlightAlpha(rgb);
 					chip.style.backgroundColor = entry.color;
 					await this.plugin.saveSettings();
 				});
 			});
+			colorInput()?.addEventListener('change', () => void this.plugin.commitPalette());
 			colorInput()?.setAttribute('aria-label', `Color for ${entry.name}`);
 		});
 
@@ -79,6 +99,7 @@ export class ColorHighlighterSettingTab extends PluginSettingTab {
 				button.setButtonText('Reset to defaults').onClick(async () => {
 					this.plugin.settings.colors = DEFAULT_COLORS.map((c) => ({ ...c }));
 					await this.plugin.saveSettings();
+					await this.plugin.commitPalette();
 					this.display();
 				}),
 			);

@@ -41,6 +41,7 @@ describe('sanitizeSettings', () => {
 			colors: DEFAULT_COLORS.map((c, i) => ({ name: `C${i}`, color: '#11223355' })),
 			lastUsedIndex: 3,
 			autoShow: false,
+			committed: DEFAULT_COLORS.map(() => '#11223355'),
 		};
 		expect(sanitizeSettings(saved)).toEqual(saved);
 	});

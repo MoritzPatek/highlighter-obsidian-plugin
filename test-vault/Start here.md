@@ -83,9 +83,18 @@ Open [[Lists and table]].
 - [ ] Command palette: run "Highlight: Green" on selected text. It highlights immediately, no list.
 - [ ] Bind a hotkey to "Highlight: Pink" in Settings -> Hotkeys and use it.
 
+## 8b. Edit colors in the picker
+
+- [ ] Select text, press Cmd+H, click the pencil (or press E). The five colors appear as rows (color, number chip, name), the focus is in the first name field and the selection stays visible.
+- [ ] Type a name: nothing is applied. Esc collapses the editor (the picker stays), a second Esc closes the picker.
+- [ ] Change a color (click its round swatch). The swatches update live. Pick a color that another row already uses: the shade is adjusted and a hint appears.
+- [ ] First highlight a few words in Yellow in two different notes. Then change Yellow to another color and press Done: both notes now show the new color, a notice says how many highlights in how many notes were updated, `==native==` highlights are unchanged, and a mark inside `inline code` is unchanged.
+- [ ] "Reset to defaults" in the editor restores names and colors and recolors the highlights back.
+- [ ] In an auto-shown picker (mouse selection) the pencil works too; typing in a name field does not close it.
+
 ## 9. Settings
 
-- [ ] Settings -> Color Highlighter: change a color and a name (opacity is fixed at 33%). Highlight some text: the new color is used.
+- [ ] Settings -> Color Highlighter: change a color (drag in the picker, nothing changes in the notes until you let go; then existing highlights of that color are recolored) and a name (opacity is fixed at 33%). Highlight some text: the new color is used.
 - [ ] "Reset to defaults" restores the five defaults.
 
 ## 10. Portability

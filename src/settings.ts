@@ -15,6 +15,12 @@ export interface ColorHighlighterSettings {
 	lastUsedIndex: number;
 	/** Open the picker automatically after a mouse selection. */
 	autoShow: boolean;
+	/**
+	 * The color of each slot as it is written in the notes right now. Differs from
+	 * `colors` only while a palette edit has not been applied to the vault yet
+	 * (see `paletteChanges`); the plugin reconciles it on commit and on startup.
+	 */
+	committed: string[];
 }
 
 /** Alpha appended to every highlight color (33%). Not user-editable. */
@@ -45,6 +51,7 @@ export const DEFAULT_SETTINGS: ColorHighlighterSettings = {
 	colors: DEFAULT_COLORS.map((c) => ({ ...c })),
 	lastUsedIndex: 0,
 	autoShow: true,
+	committed: DEFAULT_COLORS.map((c) => c.color),
 };
 
 const HEX_RE = /^#(?:[0-9a-f]{6}|[0-9a-f]{8})$/i;
@@ -79,7 +86,14 @@ export function sanitizeSettings(raw: unknown): ColorHighlighterSettings {
 	// Older saved data has no autoShow: default ON.
 	const autoShow = typeof data.autoShow === 'boolean' ? data.autoShow : true;
 
-	return { colors, lastUsedIndex, autoShow };
+	// Which colors the notes currently use. Missing or broken: assume the current palette.
+	const rawCommitted = Array.isArray(data.committed) ? (data.committed as unknown[]) : [];
+	const committed = colors.map((c, i) => {
+		const v = rawCommitted[i];
+		return isValidHexColor(v) ? withHighlightAlpha(v) : c.color;
+	});
+
+	return { colors, lastUsedIndex, autoShow, committed };
 }
 
 /**
@@ -123,4 +137,47 @@ export function findColorIndex(colors: readonly HighlightColor[], color: string 
 	if (color === null) return -1;
 	const target = color.trim().toUpperCase();
 	return colors.findIndex((c) => c.color.toUpperCase() === target);
+}
+
+/**
+ * Old -> new color of every slot whose color changed (both upper-case #RRGGBBAA).
+ * Slots that did not change are left out.
+ */
+export function paletteChanges(
+	committed: readonly string[],
+	colors: readonly HighlightColor[],
+): Map<string, string> {
+	const map = new Map<string, string>();
+	colors.forEach((c, i) => {
+		const old = committed[i];
+		if (old && old.toUpperCase() !== c.color.toUpperCase()) map.set(old.toUpperCase(), c.color.toUpperCase());
+	});
+	return map;
+}
+
+/**
+ * `rgb` (#RRGGBB) unless another slot already uses it; then the nearest free
+ * shade (blue channel +-1, +-2, ...), so two slots never share a color (that
+ * would merge their highlights irreversibly). `others` are #RRGGBB or #RRGGBBAA.
+ */
+export function uniqueRgb(rgb: string, others: readonly string[]): { rgb: string; nudged: boolean } {
+	const taken = new Set(others.map((o) => o.slice(0, 7).toUpperCase()));
+	const base = rgb.slice(0, 7).toUpperCase();
+	if (!taken.has(base)) return { rgb: base, nudged: false };
+	const r = base.slice(1, 5);
+	const blue = parseInt(base.slice(5, 7), 16);
+	for (let d = 1; d < 256; d++) {
+		for (const b of [blue + d, blue - d]) {
+			if (b < 0 || b > 255) continue;
+			const cand = `#${r}${b.toString(16).padStart(2, '0').toUpperCase()}`;
+			if (!taken.has(cand)) return { rgb: cand, nudged: true };
+		}
+	}
+	return { rgb: base, nudged: false };
+}
+
+/** Index of another slot that already uses `rgb`, or -1. */
+export function findDuplicateSlot(colors: readonly HighlightColor[], index: number, rgb: string): number {
+	const target = rgb.slice(0, 7).toUpperCase();
+	return colors.findIndex((c, i) => i !== index && c.color.slice(0, 7).toUpperCase() === target);
 }

@@ -5,16 +5,19 @@ import {
 	expandSelectionToTarget,
 	restoreSelection,
 	getSelectionContext,
-	pickerFocusIndex,
+	pickerCurrentIndex,
 	getState,
 	highlightSelection,
 	removeSelectionHighlight,
 	touchesCode,
 } from './editorOps';
 import { shouldAutoShow } from './pickerLogic';
+import { recolorSummary, recolorVault } from './recolorVault';
 import { ColorHighlighterSettingTab } from './settingsTab';
 import {
+	DEFAULT_COLORS,
 	DEFAULT_SETTINGS,
+	paletteChanges,
 	sanitizeSettings,
 	type ColorHighlighterSettings,
 } from './settings';
@@ -50,6 +53,8 @@ export default class ColorHighlighterPlugin extends Plugin {
 
 		this.addSettingTab(new ColorHighlighterSettingTab(this.app, this));
 		this.registerAutoShow();
+		// A palette edit that was never applied to the notes (crash, quit) is applied now.
+		this.app.workspace.onLayoutReady(() => void this.commitPalette());
 		this.register(() => this.closePicker?.());
 	}
 
@@ -137,6 +142,42 @@ export default class ColorHighlighterPlugin extends Plugin {
 		await this.saveData(this.settings);
 	}
 
+	private commitChain: Promise<void> = Promise.resolve();
+
+	/**
+	 * Make the notes follow the palette: every highlight written in a slot's
+	 * previous (committed) color is rewritten to its current color. Called when a
+	 * palette edit ends (Done, collapse, close, Reset, settings change) and on
+	 * startup, so a crash in between never leaves highlights behind. Calls run one
+	 * after the other.
+	 */
+	commitPalette(): Promise<void> {
+		this.commitChain = this.commitChain.then(() => this.doCommitPalette()).catch((err) => {
+			console.error('Color Highlighter: palette commit failed', err);
+		});
+		return this.commitChain;
+	}
+
+	private async doCommitPalette() {
+		const map = paletteChanges(this.settings.committed, this.settings.colors);
+		if (map.size === 0) return;
+		const result = await recolorVault(this.app, map);
+		this.settings.committed = this.settings.colors.map((c) => c.color);
+		await this.saveSettings();
+		const msg = recolorSummary(result);
+		if (msg) new Notice(msg);
+	}
+
+	/** Save while a palette is being edited (cheap, debounced by the caller's rate). */
+	private saveTimer: number | null = null;
+	saveSoon() {
+		if (this.saveTimer !== null) window.clearTimeout(this.saveTimer);
+		this.saveTimer = window.setTimeout(() => {
+			this.saveTimer = null;
+			void this.saveSettings();
+		}, 300);
+	}
+
 	private async highlightWithPicker(editor: Editor, auto = false) {
 		const ctx = getSelectionContext(editor);
 		if (this.refuseInCode(touchesCode(ctx), auto)) return;
@@ -154,20 +195,26 @@ export default class ColorHighlighterPlugin extends Plugin {
 		this.pickerOpen = true;
 		let choice;
 		try {
-			choice = await openColorPicker(
-				this.app,
-				editor,
-				this.settings.colors,
-				this.settings.lastUsedIndex,
-				pickerFocusIndex(getSelectionContext(editor), this.settings.colors, this.settings.lastUsedIndex),
-				state.highlighted,
-				auto,
-				(close) => (this.closePicker = close),
-			);
+			const ctx2 = getSelectionContext(editor);
+			const current = pickerCurrentIndex(ctx2, this.settings.colors);
+			choice = await openColorPicker(this.app, editor, {
+				colors: this.settings.colors,
+				defaults: DEFAULT_COLORS,
+				lastUsedIndex: this.settings.lastUsedIndex,
+				focusIndex: current >= 0 ? current : this.settings.lastUsedIndex,
+				currentIndex: current,
+				isHighlighted: state.highlighted,
+				autoShown: auto,
+				onHandle: (close) => (this.closePicker = close),
+				onEdited: () => this.saveSoon(),
+				onCommit: () => void this.commitPalette(),
+			});
 		} finally {
 			this.pickerOpen = false;
 			this.closePicker = null;
 		}
+		// A palette edit made in the popover is applied to the notes before we paint.
+		await this.commitPalette();
 		if (!choice) return;
 		// Apply to the selection the user saw when choosing, even if it moved meanwhile.
 		restoreSelection(editor, snapshot);

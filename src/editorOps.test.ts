@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
 	applyEdit,
 	captureSelection,
+	pickerCurrentIndex,
 	pickerFocusIndex,
 	expandSelectionToTarget,
 	restoreSelection,
@@ -324,5 +325,16 @@ describe('pickerFocusIndex', () => {
 		expect(pickerFocusIndex(ctx(t, t.indexOf('green'), t.indexOf('pink')), colors, 4)).toBe(4); // two highlights
 		expect(pickerFocusIndex(ctx(t, t.indexOf('nat'), t.indexOf('nat')), colors, 2)).toBe(2); // native has no color
 		expect(pickerFocusIndex(ctx(t, t.indexOf('odd'), t.indexOf('odd')), colors, 2)).toBe(2); // not in the palette
+	});
+});
+
+describe('pickerCurrentIndex', () => {
+	const ctx = (text: string, from: number, to: number) => ({ base: 0, text, from, to, fence: null });
+	it('is the palette index inside one palette-colored highlight, else -1', () => {
+		const t = `a <mark style="background: #FF5C8A55;">pink</mark> b`;
+		const at = t.indexOf('ink');
+		expect(pickerCurrentIndex(ctx(t, at, at), DEFAULT_COLORS)).toBe(3);
+		expect(pickerCurrentIndex(ctx(t, 0, 1), DEFAULT_COLORS)).toBe(-1);
+		expect(pickerCurrentIndex(ctx('==n==', 2, 2), DEFAULT_COLORS)).toBe(-1);
 	});
 });

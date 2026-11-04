@@ -166,15 +166,12 @@ export function expandSelectionToTarget(editor: EditorLike): boolean {
 }
 
 /**
- * Which palette color the picker should focus first. When the selection or caret
- * is inside exactly ONE existing highlight whose color is a palette color, that
- * color; otherwise the last-used color. Never the Remove item.
+ * The palette color of the highlight the selection or caret is in: the index of
+ * the color when it is inside exactly ONE existing highlight whose color is a
+ * palette color, otherwise -1 (plain text, several highlights, natives, colors
+ * that are not in the palette).
  */
-export function pickerFocusIndex(
-	ctx: SelectionContext,
-	colors: readonly { color: string }[],
-	lastUsedIndex: number,
-): number {
+export function pickerCurrentIndex(ctx: SelectionContext, colors: readonly { color: string }[]): number {
 	const norm = (c: string) => c.replace(/\s/g, '').toUpperCase();
 	const touched = findHighlights(ctx.text, ctx.fence).filter((sp) =>
 		ctx.from === ctx.to
@@ -183,8 +180,17 @@ export function pickerFocusIndex(
 	);
 	const only = touched.length === 1 ? touched[0] : undefined;
 	if (only && only.color && ctx.from >= only.start && ctx.to <= only.end) {
-		const i = colors.findIndex((c) => norm(c.color) === norm(only.color as string));
-		if (i >= 0) return i;
+		return colors.findIndex((c) => norm(c.color) === norm(only.color as string));
 	}
-	return lastUsedIndex;
+	return -1;
+}
+
+/** Which palette color the picker focuses first: the current color of the highlight, else the last-used one. */
+export function pickerFocusIndex(
+	ctx: SelectionContext,
+	colors: readonly { color: string }[],
+	lastUsedIndex: number,
+): number {
+	const i = pickerCurrentIndex(ctx, colors);
+	return i >= 0 ? i : lastUsedIndex;
 }

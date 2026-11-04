@@ -70,6 +70,8 @@ All commands are in the command palette (Cmd+P) under "Color Highlighter".
 - Only the first cursor is used if you have several.
 - After a highlight is applied the caret sits just after it, so it renders at once. At the very end of a note there is nothing after it, so Live Preview keeps showing the `<mark …>` source until you click elsewhere or press Enter.
 - Clicking an already colored highlight opens the picker (with auto-show on), so you can switch its color or remove it. Before you choose, a selection that cuts through bold, italic or similar formatting grows to include the whole run, so Markdown never breaks.
+- **Edit colors in the picker:** click the pencil in the picker (or press `E` when you opened it with the hotkey) to change names and colors without leaving the text. Esc closes the editor first, then the picker. **Highlights follow the palette:** when you finish editing (Done, Esc, closing the picker, Reset to defaults, or releasing a color in Settings), every existing highlight of a changed color in every note of the vault is rewritten to the new color, and you get a notice such as "Updated 12 highlights in 4 notes." Only `<mark style="background: #…">` highlights written by this plugin are rewritten; `==native==` highlights, inline code and code blocks are left alone. Two colors can never be identical (the shade is nudged), so highlights of different colors never merge.
+- When the selection is inside a highlight with one of your five colors, that color is focused first and carries a check badge; the caption reads "Green · current".
 - Code is left alone: highlighting or removing inside inline code or fenced code blocks (``` or ~~~) is refused with a notice. Indented code blocks are not detected.
 
 ## Hotkey
