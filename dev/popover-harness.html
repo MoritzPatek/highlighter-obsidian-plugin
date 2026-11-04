@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Popover harness (dev only)</title>
+<link rel="stylesheet" href="../styles.css">
+<style>
+/* Approximation of Obsidian's variables and the few core styles we rely on. */
+.theme-light { --background-primary:#fff; --background-secondary:#f6f6f6; --background-modifier-border:#e0e0e0; --background-modifier-form-field:#fff; --text-normal:#222; --text-muted:#5c5c5c; --text-faint:#6b6b6b; --interactive-accent:#705dcf; --interactive-normal:#f2f3f5; --interactive-hover:#e9e9ea; --shadow-s:0 1px 2px rgba(0,0,0,.12),0 8px 20px rgba(0,0,0,.14); color-scheme:light; }
+.theme-dark { --background-primary:#1e1e1e; --background-secondary:#262626; --background-modifier-border:#363636; --background-modifier-form-field:#262626; --text-normal:#dadada; --text-muted:#b3b3b3; --text-faint:#8a8a8a; --interactive-accent:#8a7cf0; --interactive-normal:#2f2f2f; --interactive-hover:#3a3a3a; --shadow-s:0 1px 2px rgba(0,0,0,.4),0 8px 20px rgba(0,0,0,.5); color-scheme:dark; }
+:root { --radius-s:4px; --radius-m:8px; --font-ui:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif; }
+* { box-sizing: border-box; }
+body { margin:0; font-family:var(--font-ui); background:var(--background-primary); color:var(--text-normal); font-size:15px; }
+/* Obsidian's generic button style, to prove our overrides win. */
+button { background:var(--interactive-normal); box-shadow:0 1px 1px rgba(0,0,0,.1); height:30px; padding:var(--size-4-1,4px) 12px; border:0; border-radius:var(--radius-s); color:var(--text-normal); }
+button:hover { background:var(--interactive-hover); }
+#editor { max-width:700px; margin:0 auto; padding:32px 24px 120px; line-height:1.6; font-size:16px; }
+#editor h1 { font-size:1.8em; margin:0 0 .6em; }
+#editor mark { color:inherit; }
+::selection { background: color-mix(in srgb, var(--interactive-accent) 35%, transparent); }
+#settings { max-width:700px; margin:0 auto; padding:24px; }
+.setting-item { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:12px 0; border-top:1px solid var(--background-modifier-border); }
+.setting-item-name { font-size:15px; }
+.setting-item-control { display:flex; align-items:center; gap:12px; }
+.setting-item-control input[type=text] { font:inherit; font-size:13px; color:var(--text-normal); background:var(--background-modifier-form-field); border:1px solid var(--background-modifier-border); border-radius:var(--radius-s); height:30px; padding:0 10px; }
+.setting-item-control input[type=color] { padding:0; border:1px solid var(--background-modifier-border); border-radius:var(--radius-s); background:none; }
+.setting-item-heading { border-top:0; } .setting-item-heading .setting-item-name { font-weight:600; }
+.setting-item-description { font-size:13px; color:var(--text-muted); padding-top:2px; }
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<main id="editor" hidden>
+  <h1>Reading notes: Thinking, Fast and Slow</h1>
+  <p>System 1 operates automatically and quickly, with little or no effort and no sense of voluntary control. System 2 allocates attention to the effortful mental activities that demand it.</p>
+  <p>The <mark id="marked" style="background:#FFD60A55">availability heuristic</mark> is a mental shortcut that relies on immediate examples that come to mind. Losses loom <span id="sel">larger than gains</span>. People work harder to avoid losing what they have than to acquire something of equal value.</p>
+</main>
+<section id="settings" hidden>
+  <div class="setting-item setting-item-heading"><div><div class="setting-item-name">Highlight colors</div><div class="setting-item-description">Shown when you run <em>Color Highlighter: Pick color</em>. Assign Cmd+H in Settings → Hotkeys. Colors are applied at 33% opacity so text stays readable in light and dark themes.</div></div></div>
+  <div id="rows"></div>
+  <div class="setting-item"><div><div class="setting-item-name">Reset colors</div><div class="setting-item-description">Restore the five default colors and names.</div></div><div class="setting-item-control"><button>Reset to defaults</button></div></div>
+</section>
+<script src="harness.js"></script>
+</body>
+</html>
