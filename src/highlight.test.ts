@@ -7,6 +7,7 @@ import {
 	codeRanges,
 	findHighlights,
 	getHighlightState,
+	highlightRange,
 	removeHighlight,
 	selectionTouchesCode,
 	type TextEdit,
@@ -509,5 +510,29 @@ describe('final fixes: remove respects code, CommonMark fences', () => {
 	});
 	it('a backtick fence line with a backtick in its info string is inline code, not a fence', () => {
 		expect(endsInsideFence('``` a`b\nx')).toBeNull();
+	});
+});
+
+describe('highlightRange', () => {
+	it('widens over touched natives, marks and format runs, and is idempotent', () => {
+		const t = 'a ==native one== b ' + mark('mk') + ' **bold** c';
+		for (const [f, to] of [
+			[5, 9],
+			[10, t.indexOf('mk') + 1],
+			[t.indexOf('bold') + 1, t.length - 1],
+		] as const) {
+			const [s, e] = highlightRange(t, f, to);
+			expect(s).toBeLessThanOrEqual(f);
+			expect(e).toBeGreaterThanOrEqual(to);
+			expect(highlightRange(t, s, e)).toEqual([s, e]);
+			// applying to the original or the widened range gives the same result
+			const a = applyHighlight(t, f, to, Y) as TextEdit;
+			const b = applyHighlight(t, s, e, Y) as TextEdit;
+			expect(applyEdit(t, a)).toBe(applyEdit(t, b));
+		}
+	});
+	it('leaves caret and plain selections alone', () => {
+		expect(highlightRange('plain text', 2, 2)).toEqual([2, 2]);
+		expect(highlightRange('plain text', 2, 5)).toEqual([2, 5]);
 	});
 });

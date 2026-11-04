@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
 	applyEdit,
 	captureSelection,
+	expandSelectionToTarget,
 	restoreSelection,
 	getSelectionContext,
 	highlightSelection,
@@ -123,6 +124,21 @@ describe('editor glue with a fake editor', () => {
 		ed.sel = { from: 0, to: 1 };
 		expect(restoreSelection(ed, snap)).toBe(false);
 		expect(ed.sel).toEqual({ from: 0, to: 1 });
+	});
+
+	it('expands the visible selection to the real target before choosing, and apply is unchanged by it', () => {
+		const doc = `x ${'==a native highlight=='} in the middle`;
+		const from = doc.indexOf('native');
+		const to = doc.indexOf('highlight==') + 3; // ends inside the closing ==
+		const direct = new FakeEditor(doc, from, to);
+		highlightSelection(direct, YELLOW);
+		const ed = new FakeEditor(doc, from, to);
+		expect(expandSelectionToTarget(ed)).toBe(true);
+		expect(ed.sel).toEqual({ from: doc.indexOf('=='), to: doc.indexOf(' in the') });
+		highlightSelection(ed, YELLOW);
+		expect(ed.doc).toBe(direct.doc);
+		expect(expandSelectionToTarget(new FakeEditor('plain text', 0, 5))).toBe(false);
+		expect(expandSelectionToTarget(new FakeEditor('plain', 2, 2))).toBe(false);
 	});
 
 	it('applyEdit does nothing for a null edit', () => {

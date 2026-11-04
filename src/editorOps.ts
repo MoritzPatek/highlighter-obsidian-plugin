@@ -7,6 +7,7 @@ import {
 	applyHighlight,
 	endsInsideFence,
 	getHighlightState,
+	highlightRange,
 	removeHighlight,
 	selectionTouchesCode,
 	type Fence,
@@ -126,5 +127,19 @@ export function restoreSelection(editor: EditorLike, snap: SelectionSnapshot): b
 	const at = editor.getRange(editor.offsetToPos(snap.from), editor.offsetToPos(snap.to));
 	if (at !== snap.text) return false;
 	editor.setSelection(editor.offsetToPos(snap.from), editor.offsetToPos(snap.to));
+	return true;
+}
+
+/**
+ * Make the visible selection equal to what a highlight will really cover (whole
+ * native/mark spans and formatting runs the selection cuts into), so the user
+ * sees the true target before choosing. Returns true when the selection grew.
+ */
+export function expandSelectionToTarget(editor: EditorLike): boolean {
+	const ctx = getSelectionContext(editor);
+	if (ctx.from === ctx.to) return false;
+	const [s, e] = highlightRange(ctx.text, ctx.from, ctx.to, ctx.fence);
+	if (s === ctx.from && e === ctx.to) return false;
+	editor.setSelection(editor.offsetToPos(ctx.base + s), editor.offsetToPos(ctx.base + e));
 	return true;
 }

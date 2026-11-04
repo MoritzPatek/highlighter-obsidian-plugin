@@ -2,6 +2,7 @@ import { Editor, MarkdownView, Notice, Platform, Plugin } from 'obsidian';
 import { openColorPicker } from './colorPicker';
 import {
 	captureSelection,
+	expandSelectionToTarget,
 	restoreSelection,
 	getSelectionContext,
 	getState,
@@ -139,6 +140,8 @@ export default class ColorHighlighterPlugin extends Plugin {
 		}
 
 		if (this.pickerOpen) return;
+		// Show the real target (whole ==x== / <mark> / **bold** runs) before the user chooses.
+		expandSelectionToTarget(editor);
 		const snapshot = captureSelection(editor);
 		this.pickerOpen = true;
 		let choice;

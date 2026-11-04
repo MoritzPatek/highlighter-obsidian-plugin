@@ -423,6 +423,32 @@ function linePrefixAt(text: string, offset: number): string {
 // ---------------------------------------------------------------------------
 
 /**
+ * The range that `applyHighlight` will actually wrap for the selection [from, to):
+ * the selection widened over the highlights it touches and over formatting runs
+ * it cuts through. Idempotent. Use it to show the user the real target range.
+ */
+export function highlightRange(
+	text: string,
+	from: number,
+	to: number,
+	fence: Fence | null = null,
+): [number, number] {
+	const [a, b] = normalizeRange(text, from, to);
+	let start = a;
+	let end = b;
+	if (a === b) return [a, b];
+	for (let prev = -1; prev !== end - start; ) {
+		prev = end - start;
+		for (const sp of touchedSpans(text, start, end, fence)) {
+			start = Math.min(start, sp.start);
+			end = Math.max(end, sp.end);
+		}
+		[start, end] = expandForMarkers(text, start, end);
+	}
+	return [start, end];
+}
+
+/**
  * Highlight the selection in `color` (any CSS color, normally `#RRGGBBAA`).
  * Returns null when nothing can be highlighted (selection is only whitespace
  * or a table separator row).
@@ -452,17 +478,7 @@ export function applyHighlight(
 		return { from: a, to: a, insert: tag + MARK_CLOSE, selFrom: pos, selTo: pos };
 	}
 
-	// Widen over touched highlights and cut formatting markers until stable.
-	let start = a;
-	let end = b;
-	for (let prev = -1; prev !== end - start; ) {
-		prev = end - start;
-		for (const sp of touchedSpans(text, start, end, fence)) {
-			start = Math.min(start, sp.start);
-			end = Math.max(end, sp.end);
-		}
-		[start, end] = expandForMarkers(text, start, end);
-	}
+	const [start, end] = highlightRange(text, a, b, fence);
 	const spansInRange = touchedSpans(text, start, end, fence);
 	const inner = unwrap(text, start, end, spansInRange);
 	const wrapped = wrapText(inner, linePrefixAt(text, start), color);
