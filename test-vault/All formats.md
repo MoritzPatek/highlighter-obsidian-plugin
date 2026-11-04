@@ -192,6 +192,15 @@ A <mark style="background: #FFD60A55;">highlight with **bold** inside</mark> and
 
 A link alias [[Sample text|with <mark style="background: #FFD60A55;">mark</mark> alias]] and a ==native with **bold**== here.
 
+## Indented code
+
+A paragraph before the indented code block.
+
+    indented code line one with **stars** and [[a link]]
+    indented code line two
+
+A paragraph after the indented code block.
+
 ## Final section
 
 The last paragraph of the note ends here, with a closing sentence.

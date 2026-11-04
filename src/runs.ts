@@ -151,12 +151,28 @@ export function paintableRuns(text: string, fence: Fence | null = null, frontLin
 	const out: [number, number][] = [];
 	let pos = 0;
 	let state = fence;
+	// Indented code block (CommonMark): 4+ spaces or a tab after a blank line, outside a list item.
+	let prevBlank = true;
+	let inIndented = false;
+	let listContext = false;
 	text.split('\n').forEach((line, i) => {
 		const lineStart = pos;
 		pos += line.length + 1;
 		const before = state;
 		state = stepFence(line, state);
-		if (i < frontLines || before || state) return; // properties, code and math blocks, fence lines
+		const blank = line.trim() === '';
+		const indent = /^(?: {4,}|\t)/.test(line);
+		if (!before && !state && !blank && i >= frontLines) {
+			if (indent && !listContext && (prevBlank || inIndented)) inIndented = true;
+			else {
+				inIndented = false;
+				// a list item opens a context in which indented lines are item content, not code
+				if (/^[ \t]*(?:[-*+]|\d{1,9}[.)])[ \t]/.test(line)) listContext = true;
+				else if (!/^[ \t]{2,}/.test(line)) listContext = false;
+			}
+		}
+		prevBlank = blank;
+		if (i < frontLines || before || state || (inIndented && !blank)) return; // properties, code and math blocks, fence lines, indented code
 		for (const [s, e] of lineRuns(line)) out.push([lineStart + s, lineStart + e]);
 	});
 	return out;

@@ -122,3 +122,28 @@ describe('All formats.md', () => {
 		expect(skipped).toBeGreaterThan(50); // code, math, properties, links ... really are skipped
 	}, 120000);
 });
+
+describe('large selections (owner bug: raw <mark> after a big selection)', () => {
+	const note = (n: string) => readFileSync(new URL(`../test-vault/${n}`, import.meta.url), 'utf8');
+	for (const name of ['Sample text.md', 'Lists and table.md', 'All formats.md']) {
+		it(`select-all over ${name} breaks nothing and paints no indented code`, () => {
+			const doc = note(name);
+			const ed = new FakeEditor(doc, 0, doc.length);
+			expect(highlightSelection(ed, PINK)).toBe('ok');
+			expect(violations(doc, ed.doc, PINK)).toEqual([]);
+			expect(ed.doc).not.toMatch(/^( {4,}|\t)<mark/m);
+			ed.undo();
+			expect(ed.doc).toBe(doc);
+		});
+	}
+	it("the owner's selection: from inside a native highlight to the end of a heading", () => {
+		const doc = note('Sample text.md');
+		const from = doc.indexOf('==a native highlight==') + 4;
+		const to = doc.indexOf('## Multi-line paragraphs') + '## Multi-line paragraphs'.length;
+		const ed = new FakeEditor(doc, from, to);
+		highlightSelection(ed, '#4DA3FF55');
+		expect(violations(doc, ed.doc, '#4DA3FF55')).toEqual([]);
+		expect(ed.doc).toContain('==a== <mark style="background: #4DA3FF55;">native highlight in the middle.');
+		expect(ed.doc).toContain('## <mark style="background: #4DA3FF55;">Multi-line paragraphs</mark>');
+	});
+});

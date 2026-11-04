@@ -91,3 +91,21 @@ describe('block structure', () => {
 		expect(doc('- item\n\n  ```bash\n  echo hi\n  ```\n\n- next')).toEqual(['item', 'next']);
 	});
 });
+
+describe('indented code blocks are never painted', () => {
+	it('4 spaces or a tab after a blank line is code', () => {
+		expect(doc('para\n\n    code line\n    more code\n\nafter')).toEqual(['para', 'after']);
+		expect(doc('para\n\n\tcode\n\nafter')).toEqual(['para', 'after']);
+		expect(doc('    code at the very start\nplain line')).toEqual(['plain line']);
+	});
+	it('indented text right after a paragraph line is a continuation, not code', () => {
+		expect(doc('para\n    continued')).toEqual(['para', '    continued']);
+	});
+	it('indented content of a list item is not code', () => {
+		expect(doc('- item\n\n    second paragraph\n\nafter')).toEqual(['item', '    second paragraph', 'after']);
+		expect(doc('1. one\n\n        deeper\n\nafter')).toEqual(['one', '        deeper', 'after']);
+	});
+	it('after the list ends the next indented block is code again', () => {
+		expect(doc('- item\n\nplain\n\n    code\n')).toEqual(['item', 'plain']);
+	});
+});

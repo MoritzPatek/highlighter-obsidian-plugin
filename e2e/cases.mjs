@@ -7,6 +7,17 @@
 //   trimEnd: run on the note without its trailing newline (the caret cannot go below the highlight)
 //   prepare: (doc) => doc, a different note to run on (e.g. one that ends with a mark)
 //   undoCheck: true: one Cmd+Z must restore the note exactly (and Cmd+Shift+Z redo it)
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const vaultNote = (name) => readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'test-vault', name), 'utf8');
+const SAMPLE = vaultNote('Sample text.md');
+const LISTS = vaultNote('Lists and table.md');
+// the owner's large selection: from just inside the native highlight down to the end of the next-but-one heading
+const BIG_FROM = SAMPLE.indexOf('==a native highlight==') + 4;
+const BIG_TO = SAMPLE.indexOf('## Multi-line paragraphs') + '## Multi-line paragraphs'.length;
+
 export const cases = [
 	// --- headings
 	{ id: 'h1-word', section: 'Headings', find: 'Heading level one', color: 1 },
@@ -135,4 +146,14 @@ export const cases = [
 		color: 1,
 		undoCheck: true,
 	},
+	// --- large selections (owner bug: raw <mark> after highlighting a big selection)
+	{ id: 'big-owner-selection', section: 'Large selections', prepare: () => SAMPLE, find: SAMPLE.slice(BIG_FROM, BIG_TO), color: 3, undoCheck: true },
+	{ id: 'big-owner-selection-mouse', via: 'mouse', section: 'Large selections', prepare: () => SAMPLE, find: SAMPLE.slice(BIG_FROM, SAMPLE.indexOf('## Already colored') + 30), color: 3 },
+	{ id: 'select-all-sample', section: 'Large selections', prepare: () => SAMPLE, all: true, color: 2, undoCheck: true },
+	{ id: 'select-all-lists', section: 'Large selections', prepare: () => LISTS, all: true, color: 4, undoCheck: true },
+	{ id: 'whole-paragraph', section: 'Large selections', find: 'A paragraph before the indented code block.', color: 1 },
+	{ id: 'whole-heading', section: 'Large selections', find: 'Indented code', color: 2 },
+	{ id: 'starts-inside-native', section: 'Large selections', find: 'native highlight== in a sentence and another ==second native one== here.', color: 3 },
+	{ id: 'indented-code-only', section: 'Indented code', find: 'indented code line one with **stars** and [[a link]]\n    indented code line two', color: 4, nothing: true },
+	{ id: 'indented-code-across', section: 'Indented code', find: 'A paragraph before the indented code block.\n\n    indented code line one', color: 5 },
 ];

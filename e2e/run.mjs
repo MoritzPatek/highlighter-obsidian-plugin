@@ -134,6 +134,7 @@ const sameColor = (css, hex) => {
 	return Math.abs(p[0] - r) < 2 && Math.abs(p[1] - g) < 2 && Math.abs(p[2] - b) < 2 && Math.abs((p[3] ?? 1) - a) < 0.03;
 };
 const findRange = (spec, doc) => {
+	if (spec.all) return [0, doc.length];
 	let from = 0;
 	if (spec.after) from = doc.indexOf(spec.after);
 	let idx = from;
