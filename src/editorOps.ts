@@ -30,6 +30,7 @@ export interface EditorLike {
 	replaceRange(text: string, from: Pos, to?: Pos): void;
 	setCursor(pos: Pos): void;
 	setSelection(anchor: Pos, head?: Pos): void;
+	lineCount(): number;
 }
 
 /** The text of the lines touched by the selection, and the selection inside it. */
@@ -70,18 +71,34 @@ export function getState(ctx: SelectionContext): HighlightState {
 	return getHighlightState(ctx.text, ctx.from, ctx.to, ctx.fence);
 }
 
-/** Replace the edited range and put the caret after the new text. */
-export function applyEdit(editor: EditorLike, ctx: SelectionContext, edit: TextEdit | null): void {
+/**
+ * Replace the edited range and put the caret after it.
+ *
+ * Live Preview shows the raw `<mark …>` source while the caret touches the
+ * element (measured in Obsidian 1.15: caret at either end or inside reveals it,
+ * one character past `</mark>` renders it). So after highlighting, the caret
+ * goes one character past the closing tag, or to the start of the next line
+ * when the highlight ends the line.
+ */
+export function applyEdit(
+	editor: EditorLike,
+	ctx: SelectionContext,
+	edit: TextEdit | null,
+	mode: 'highlight' | 'remove' = 'highlight',
+): void {
 	if (!edit) return;
 	const at = (offset: number) => editor.offsetToPos(ctx.base + offset);
 	editor.replaceRange(edit.insert, at(edit.from), at(edit.to));
-	// Collapse to the end of the affected text so typing continues after it.
-	// A non-empty highlight: put the caret after the closing tag.
 	let end = edit.selTo;
-	if (edit.selFrom !== edit.selTo) {
+	if (mode === 'highlight') {
 		const closing = '</mark>';
-		const after = editor.getRange(at(end), at(end + closing.length));
-		if (after === closing) end += closing.length;
+		const idx = edit.insert.indexOf(closing, Math.max(0, edit.selTo - edit.from));
+		if (idx >= 0) {
+			end = edit.from + idx + closing.length;
+			const pos = at(end);
+			if (pos.ch < editor.getLine(pos.line).length) end += 1;
+			else if (pos.line + 1 < editor.lineCount()) end += 1; // the newline: start of next line
+		}
 	}
 	editor.setCursor(at(end));
 }
@@ -98,7 +115,7 @@ export function highlightSelection(editor: EditorLike, color: string): 'ok' | 'c
 export function removeSelectionHighlight(editor: EditorLike): 'ok' | 'code' {
 	const ctx = getSelectionContext(editor);
 	if (touchesCode(ctx)) return 'code';
-	applyEdit(editor, ctx, removeHighlight(ctx.text, ctx.from, ctx.to, ctx.fence));
+	applyEdit(editor, ctx, removeHighlight(ctx.text, ctx.from, ctx.to, ctx.fence), 'remove');
 	return 'ok';
 }
 

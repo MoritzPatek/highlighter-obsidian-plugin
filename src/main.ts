@@ -64,7 +64,7 @@ export default class ColorHighlighterPlugin extends Plugin {
 
 	/** Open the picker after a mouse selection (desktop). Keyboard selections never trigger it. */
 	private registerAutoShow() {
-		let pressed: { pointerType: string; inEditor: boolean } | null = null;
+		let pressed: { pointerType: string; inEditor: boolean; inWidget: boolean } | null = null;
 		const cancel = () => {
 			if (this.autoTimer !== null) window.clearTimeout(this.autoTimer);
 			this.autoTimer = null;
@@ -82,6 +82,9 @@ export default class ColorHighlighterPlugin extends Plugin {
 				pressed = {
 					pointerType: evt.pointerType,
 					inEditor: !!target?.closest?.('.markdown-source-view .cm-editor'),
+					// A rendered inline HTML element (e.g. a <mark>): Obsidian selects its whole source
+					// a moment after the click, so the selection may not exist yet at the first check.
+					inWidget: !!target?.closest?.('.cm-html-embed'),
 				};
 			},
 			true,
@@ -95,7 +98,7 @@ export default class ColorHighlighterPlugin extends Plugin {
 				pressed = null;
 				if (!down) return;
 				cancel();
-				this.autoTimer = window.setTimeout(() => {
+				const check = (attempt: number) => {
 					this.autoTimer = null;
 					const view = this.app.workspace.getActiveViewOfType(MarkdownView);
 					const editor = view?.editor;
@@ -114,7 +117,11 @@ export default class ColorHighlighterPlugin extends Plugin {
 						pickerOpen: this.pickerOpen,
 					});
 					if (go && editor) void this.highlightWithPicker(editor, true);
-				}, 150);
+					else if (down.inWidget && attempt < 4) {
+						this.autoTimer = window.setTimeout(() => check(attempt + 1), 100);
+					}
+				};
+				this.autoTimer = window.setTimeout(() => check(0), 150);
 			},
 			true,
 		);

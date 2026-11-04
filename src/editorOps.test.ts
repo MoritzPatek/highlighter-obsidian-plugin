@@ -24,6 +24,9 @@ class FakeEditor implements EditorLike {
 	) {
 		this.sel = { from, to };
 	}
+	lineCount(): number {
+		return this.lines().length;
+	}
 	private lines() {
 		return this.doc.split('\n');
 	}
@@ -139,6 +142,35 @@ describe('editor glue with a fake editor', () => {
 		expect(ed.doc).toBe(direct.doc);
 		expect(expandSelectionToTarget(new FakeEditor('plain text', 0, 5))).toBe(false);
 		expect(expandSelectionToTarget(new FakeEditor('plain', 2, 2))).toBe(false);
+	});
+
+	it('puts the caret one character past </mark> so Live Preview renders it', () => {
+		const doc = 'one two three';
+		const ed = new FakeEditor(doc, 4, 7);
+		highlightSelection(ed, YELLOW);
+		expect(ed.doc.slice(ed.sel.from - 8, ed.sel.from)).toBe('</mark> ');
+		expect(ed.sel.from).toBe(ed.sel.to);
+	});
+
+	it('at the end of a line the caret goes to the start of the next line', () => {
+		const ed = new FakeEditor('one two\nnext', 4, 7);
+		highlightSelection(ed, YELLOW);
+		expect(ed.getCursor('head')).toEqual({ line: 1, ch: 0 });
+	});
+
+	it('at the very end of the document the caret stays after </mark>', () => {
+		const ed = new FakeEditor('one two', 4, 7);
+		highlightSelection(ed, YELLOW);
+		expect(ed.doc.endsWith('</mark>')).toBe(true);
+		expect(ed.sel.from).toBe(ed.doc.length);
+	});
+
+	it('recoloring from a caret inside a mark also moves the caret out of it', () => {
+		const doc = `a <mark style="background: #FFF3A3A6;">word</mark> b`;
+		const at = doc.indexOf('rd');
+		const ed = new FakeEditor(doc, at, at);
+		highlightSelection(ed, YELLOW);
+		expect(ed.doc.slice(0, ed.sel.from).endsWith('</mark> ')).toBe(true);
 	});
 
 	it('applyEdit does nothing for a null edit', () => {
