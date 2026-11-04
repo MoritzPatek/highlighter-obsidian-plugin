@@ -100,6 +100,7 @@ Special characters: 3 < 5 && 7 > 2, an & ampersand, &amp; an entity, and "quotes
 - Dash item two with **bold**
   - Nested dash item
     - Deeper nested item
+        - Deepest nested item
 * Star item one
 * Star item two
 + Plus item one
@@ -191,6 +192,15 @@ Adjacent: <mark style="background: #FFD60A55;">first</mark><mark style="backgrou
 A <mark style="background: #FFD60A55;">highlight with **bold** inside</mark> and **bold with <mark style="background: #3DDC8455;">a highlight</mark> inside** here.
 
 A link alias [[Sample text|with <mark style="background: #FFD60A55;">mark</mark> alias]] and a ==native with **bold**== here.
+
+## Indented code
+
+A paragraph before the indented code block.
+
+    indented code line one with **stars** and [[a link]]
+    indented code line two
+
+A paragraph after the indented code block.
 
 ## Final section
 

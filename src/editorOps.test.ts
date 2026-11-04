@@ -151,10 +151,11 @@ describe('editor glue with a fake editor', () => {
 		const ed = new FakeEditor(doc, from, from + 3);
 		highlightSelection(ed, YELLOW);
 		expect(ed.getCursor('head')).toEqual({ line: 5, ch: 0 });
-		// a table at the very end of the note: the caret goes to the end of its last row
+		// a table at the very end of the note: an empty line is added below it for the caret
 		const last = new FakeEditor('| A |\n| - |\n| one |', 14, 17);
 		highlightSelection(last, YELLOW);
-		expect(last.getCursor('head').line).toBe(2);
+		expect(last.getCursor('head')).toEqual({ line: 3, ch: 0 });
+		expect(last.doc.endsWith('|\n')).toBe(true);
 	});
 
 	it('at the end of a line the caret goes to the start of the next line', () => {
@@ -163,11 +164,82 @@ describe('editor glue with a fake editor', () => {
 		expect(ed.getCursor('head')).toEqual({ line: 1, ch: 0 });
 	});
 
-	it('at the very end of the document the caret stays after </mark>', () => {
+	// Fix for the end-of-note exception: with no place for the caret past the mark, one "\n" is appended in the
+	// SAME edit and the caret goes on that new empty line, so the highlight renders at once. One undo reverts both.
+	it('at the very end of the note a newline is appended and the caret goes on the new line', () => {
 		const ed = new FakeEditor('one two', 4, 7);
 		highlightSelection(ed, YELLOW);
-		expect(ed.doc.endsWith('</mark>')).toBe(true);
-		expect(ed.sel.from).toBe(ed.doc.length);
+		expect(ed.doc.endsWith('</mark>\n')).toBe(true);
+		expect(ed.getCursor('head')).toEqual({ line: 1, ch: 0 });
+		ed.undo();
+		expect(ed.doc).toBe('one two');
+		expect(ed.history).toHaveLength(0); // one undo step was enough
+	});
+
+	it('the last sentence of a note: caret clear of the mark, a single undo restores the note', () => {
+		for (const tail of ['', '\n']) {
+			const doc = `first line\n\nready, delete this note and make the vault your own.${tail}`;
+			const from = doc.indexOf('ready');
+			const ed = new FakeEditor(doc, from, doc.indexOf('.'));
+			highlightSelection(ed, YELLOW);
+			// the highlight ends right before the final period: the caret target is the end of the note
+			const lines = ed.doc.split('\n');
+			const head = ed.getCursor('head');
+			expect(head, JSON.stringify(tail)).toEqual({ line: lines.length - 1, ch: 0 });
+			expect(lines[lines.length - 1]).toBe('');
+			expect(ed.doc.endsWith('.\n'), JSON.stringify(tail)).toBe(true);
+			expect(ed.doc.endsWith('\n\n')).toBe(false);
+			ed.undo();
+			expect(ed.doc, JSON.stringify(tail)).toBe(doc);
+		}
+	});
+
+	it('when the note already ends with a newline the caret just moves to that line (nothing appended)', () => {
+		const doc = 'one two\n';
+		const ed = new FakeEditor(doc, 4, 7);
+		highlightSelection(ed, YELLOW);
+		expect(ed.doc.endsWith('</mark>\n')).toBe(true);
+		expect(ed.doc.endsWith('\n\n')).toBe(false);
+		expect(ed.getCursor('head')).toEqual({ line: 1, ch: 0 });
+	});
+
+	it('a highlight followed by a final period at the end of the note also gets the empty line', () => {
+		const ed = new FakeEditor('so own.', 3, 6);
+		highlightSelection(ed, YELLOW);
+		expect(ed.doc.endsWith('</mark>.\n')).toBe(true);
+		expect(ed.getCursor('head')).toEqual({ line: 1, ch: 0 });
+		ed.undo();
+		expect(ed.doc).toBe('so own.');
+	});
+
+	it('pen over an existing mark at the end of the note, and recoloring it, also end on an empty line', () => {
+		const mk = (c: string, t: string) => `<mark style="background: ${c};">${t}</mark>`;
+		const doc = `a ${mk('#FFD60A55', 'last words')}`;
+		const pen = new FakeEditor(doc, doc.indexOf('words'), doc.indexOf('words') + 5);
+		highlightSelection(pen, DEFAULT_COLORS[3]!.color);
+		expect(pen.getCursor('head').line).toBe(1);
+		expect(pen.doc.endsWith('\n')).toBe(true);
+		pen.undo();
+		expect(pen.doc).toBe(doc);
+		// recolor by clicking the mark (the whole mark is selected, as Obsidian does)
+		const from = doc.indexOf('<mark');
+		const click = new FakeEditor(doc, from, doc.length);
+		highlightSelection(click, DEFAULT_COLORS[1]!.color);
+		expect(click.doc).toBe(`a ${mk(DEFAULT_COLORS[1]!.color, 'last words')}\n`);
+		expect(click.getCursor('head')).toEqual({ line: 1, ch: 0 });
+		click.undo();
+		expect(click.doc).toBe(doc);
+	});
+
+	it('remove at the end of the note leaves no mark and adds nothing', () => {
+		const mk = (c: string, t: string) => `<mark style="background: ${c};">${t}</mark>`;
+		const doc = `a ${mk('#FFD60A55', 'last')}`;
+		const ed = new FakeEditor(doc, doc.indexOf('last'), doc.indexOf('last') + 4);
+		removeSelectionHighlight(ed);
+		expect(ed.doc).toBe('a last');
+		const caret = new FakeEditor(doc, doc.indexOf('ast'), doc.indexOf('ast'));
+		removeSelectionHighlight(caret);
+		expect(caret.doc).toBe('a last');
 	});
 
 	it('recoloring from a caret inside a mark also moves the caret out of it', () => {
@@ -220,7 +292,8 @@ describe('property: apply then remove over the sample notes', () => {
 								lines.slice(li + 1),
 							);
 							// the edit is confined to the selected line when it is a single line
-							expect(delta, tag).toBe(0);
+							// (a selection on the last line of the note gets one empty line appended for the caret)
+							expect(delta === 0 || (delta === 1 && li === lines.length - 1 && after[after.length - 1] === ''), tag).toBe(true);
 							const newLine = after[li] as string;
 							// (a) text outside the (expanded) range is byte-identical: the part of the
 							// line before the earliest touched span/format run and after the latest one
@@ -275,7 +348,9 @@ describe('property: multi-line selections', () => {
 								const tag = `${file} ${l1}:${c1} -> ${l2}:${c2}`;
 								if (res === 'nothing') continue;
 								const after = ed.doc.split('\n');
-								expect(after.length, tag).toBe(lines.length);
+								// (a selection that reaches the end of the note gets one empty line appended for the caret)
+								const grew = after.length - lines.length;
+								expect(grew === 0 || (grew === 1 && after[after.length - 1] === ''), tag).toBe(true);
 								expect(after.slice(0, l1), tag).toEqual(lines.slice(0, l1));
 								expect(after.slice(l2 + 1), tag).toEqual(lines.slice(l2 + 1));
 								expect(plain(ed.doc), tag).toBe(plain(original));
@@ -292,7 +367,7 @@ describe('property: multi-line selections', () => {
 
 describe('pickerFocusIndex', () => {
 	const colors = DEFAULT_COLORS;
-	const ctx = (text: string, from: number, to: number) => ({ base: 0, text, from, to, fence: null, frontLines: 0 });
+	const ctx = (text: string, from: number, to: number) => ({ base: 0, text, from, to, fence: null, frontLines: 0, block: null });
 	const mk = (c: string, t: string) => `<mark style="background: ${c};">${t}</mark>`;
 	it('focuses the color of the one highlight the caret or selection is in', () => {
 		const t = `a ${mk('#3DDC8455', 'green')} b`;
@@ -316,12 +391,80 @@ describe('pickerFocusIndex', () => {
 });
 
 describe('pickerCurrentIndex', () => {
-	const ctx = (text: string, from: number, to: number) => ({ base: 0, text, from, to, fence: null, frontLines: 0 });
+	const ctx = (text: string, from: number, to: number) => ({ base: 0, text, from, to, fence: null, frontLines: 0, block: null });
 	it('is the palette index inside one palette-colored highlight, else -1', () => {
 		const t = `a <mark style="background: #FF5C8A55;">pink</mark> b`;
 		const at = t.indexOf('ink');
 		expect(pickerCurrentIndex(ctx(t, at, at), DEFAULT_COLORS)).toBe(3);
 		expect(pickerCurrentIndex(ctx(t, 0, 1), DEFAULT_COLORS)).toBe(-1);
 		expect(pickerCurrentIndex(ctx('==n==', 2, 2), DEFAULT_COLORS)).toBe(-1);
+	});
+});
+
+describe('selection on deeply nested list items (regression: the lines above are needed)', () => {
+	const NOTE = [
+		'- level 1',
+		'    - level 2',
+		'        - level 3 item',
+		'            - level 4 item',
+		'\t- tab level 2',
+		'\t\t- tab level 3 item',
+		'\t\t\t- tab level 4 item',
+		'1. numbered',
+		'    1. nested numbered',
+		'        1. level 3 numbered',
+		'        - [ ] level 3 task',
+		'            - [x] level 4 task',
+	].join('\n');
+	const lines = NOTE.split('\n');
+	for (const [i, word] of [
+		[2, 'level 3 item'],
+		[3, 'level 4 item'],
+		[5, 'tab level 3 item'],
+		[6, 'tab level 4 item'],
+		[9, 'level 3 numbered'],
+		[10, 'level 3 task'],
+		[11, 'level 4 task'],
+	] as [number, string][]) {
+		it(`paints only line ${i + 1} ("${word}") when the selection starts on it`, () => {
+			const from = NOTE.indexOf(lines[i] as string) + (lines[i] as string).indexOf(word);
+			const ed = new FakeEditor(NOTE, from, from + word.length);
+			expect(highlightSelection(ed, YELLOW)).toBe('ok');
+			expect(ed.doc).toContain(`<mark style="background: ${YELLOW};">${word}</mark>`);
+		});
+	}
+	it('a whole deep bullet line selected from its start is painted without its marker', () => {
+		const i = 3;
+		const from = NOTE.indexOf(lines[i] as string);
+		const ed = new FakeEditor(NOTE, from, from + (lines[i] as string).length);
+		expect(highlightSelection(ed, YELLOW)).toBe('ok');
+		expect(ed.doc).toContain('            - <mark');
+	});
+	it('an indented code block after a paragraph and a blank line is still skipped', () => {
+		const doc = 'A paragraph.\n\n    code line one\n    code line two\n\nafter';
+		const from = doc.indexOf('code line one');
+		const ed = new FakeEditor(doc, from, from + 'code line one'.length);
+		expect(highlightSelection(ed, YELLOW)).toBe('nothing');
+		const second = doc.indexOf('code line two');
+		const ed2 = new FakeEditor(doc, second, second + 4);
+		expect(highlightSelection(ed2, YELLOW)).toBe('nothing');
+	});
+	it('an indented code block after a list ends is skipped, but not while the list continues', () => {
+		const doc = '- item\n\nplain\n\n    code\n';
+		const from = doc.indexOf('code');
+		expect(highlightSelection(new FakeEditor(doc, from, from + 4), YELLOW)).toBe('nothing');
+	});
+	it('indented code inside a blockquote is skipped; indented list content in a quote is not', () => {
+		const code = '> quote\n>\n>     code in quote\n';
+		const from = code.indexOf('code in');
+		expect(highlightSelection(new FakeEditor(code, from, from + 7), YELLOW)).toBe('nothing');
+		const list = '> - item\n>\n>     second paragraph of the item\n';
+		const f2 = list.indexOf('second');
+		expect(highlightSelection(new FakeEditor(list, f2, f2 + 6), YELLOW)).toBe('ok');
+	});
+	it('properties and fences above do not confuse the block state', () => {
+		const doc = '---\ntitle: x\n---\n\n```\n    in a fence\n```\n\n- a\n    - b\n        - c deep\n';
+		const from = doc.indexOf('c deep');
+		expect(highlightSelection(new FakeEditor(doc, from, from + 6), YELLOW)).toBe('ok');
 	});
 });

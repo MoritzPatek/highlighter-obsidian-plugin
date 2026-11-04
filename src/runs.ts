@@ -147,16 +147,84 @@ export function lineRuns(line: string): [number, number][] {
  * `text` starts inside, `frontLines` the number of leading lines that are
  * frontmatter (properties).
  */
-export function paintableRuns(text: string, fence: Fence | null = null, frontLines = 0): [number, number][] {
+/**
+ * What the lines above say about indented code: whether the previous line was blank,
+ * whether we are inside an indented code block, and whether we are inside a list item
+ * (where indented lines are item content, not code).
+ */
+export interface BlockState {
+	prevBlank: boolean;
+	inIndented: boolean;
+	listContext: boolean;
+}
+
+export const initialBlockState = (): BlockState => ({ prevBlank: true, inIndented: false, listContext: false });
+
+const QUOTE_PREFIX = /^(?:[ \t]{0,3}>[ \t]?)+/;
+const LIST_ITEM = /^[ \t]*(?:[-*+]|\d{1,9}[.)])[ \t]/;
+
+/**
+ * Advance the indented-code state over one line (outside fences and properties).
+ * Returns true when the line belongs to an indented code block. A blockquote prefix is
+ * looked through (`>     code` is code inside the quote).
+ */
+export function stepBlock(st: BlockState, line: string): boolean {
+	const content = line.replace(QUOTE_PREFIX, '');
+	const blank = content.trim() === '';
+	let code = false;
+	if (!blank) {
+		const indent = /^(?: {4,}|\t)/.test(content);
+		if (indent && !st.listContext && (st.prevBlank || st.inIndented)) {
+			st.inIndented = true;
+			code = true;
+		} else {
+			st.inIndented = false;
+			// a list item opens a context in which indented lines are item content, not code
+			if (LIST_ITEM.test(content)) st.listContext = true;
+			else if (!/^[ \t]{2,}/.test(content)) st.listContext = false;
+		}
+	} else if (st.inIndented) {
+		code = false; // blank line inside a code block: nothing to paint anyway
+	}
+	st.prevBlank = blank;
+	return code;
+}
+
+/**
+ * The block state at the end of `linesAbove` (the lines of the note before the text that is
+ * being looked at). `fence` is the fenced block state at the START of those lines (null at the
+ * top of the note) and `frontEnd` the index of the last properties line (-1 for none).
+ */
+export function blockStateAfter(linesAbove: readonly string[], frontEnd = -1): BlockState {
+	const st = initialBlockState();
+	let fence: Fence | null = null;
+	linesAbove.forEach((line, i) => {
+		const before = fence;
+		fence = stepFence(line, fence);
+		if (i <= frontEnd || before || fence) return;
+		stepBlock(st, line);
+	});
+	return st;
+}
+
+export function paintableRuns(
+	text: string,
+	fence: Fence | null = null,
+	frontLines = 0,
+	block: BlockState | null = null,
+): [number, number][] {
 	const out: [number, number][] = [];
 	let pos = 0;
 	let state = fence;
+	const st: BlockState = block ? { ...block } : initialBlockState();
 	text.split('\n').forEach((line, i) => {
 		const lineStart = pos;
 		pos += line.length + 1;
 		const before = state;
 		state = stepFence(line, state);
-		if (i < frontLines || before || state) return; // properties, code and math blocks, fence lines
+		let code = false;
+		if (!before && !state && i >= frontLines) code = stepBlock(st, line);
+		if (i < frontLines || before || state || code) return; // properties, code and math blocks, fence lines, indented code
 		for (const [s, e] of lineRuns(line)) out.push([lineStart + s, lineStart + e]);
 	});
 	return out;

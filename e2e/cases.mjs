@@ -4,6 +4,20 @@
 //   color: 1..5 (the picker's number key)
 //   painted: optional, the exact texts that must end up painted (in order). Omit for "whatever the plugin decides".
 //   nothing: true when the plugin must refuse (no plain text in the selection)
+//   trimEnd: run on the note without its trailing newline (the caret cannot go below the highlight)
+//   prepare: (doc) => doc, a different note to run on (e.g. one that ends with a mark)
+//   undoCheck: true: one Cmd+Z must restore the note exactly (and Cmd+Shift+Z redo it)
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const vaultNote = (name) => readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'test-vault', name), 'utf8');
+const SAMPLE = vaultNote('Sample text.md');
+const LISTS = vaultNote('Lists and table.md');
+// the owner's large selection: from just inside the native highlight down to the end of the next-but-one heading
+const BIG_FROM = SAMPLE.indexOf('==a native highlight==') + 4;
+const BIG_TO = SAMPLE.indexOf('## Multi-line paragraphs') + '## Multi-line paragraphs'.length;
+
 export const cases = [
 	// --- headings
 	{ id: 'h1-word', section: 'Headings', find: 'Heading level one', color: 1 },
@@ -108,4 +122,42 @@ export const cases = [
 	{ id: 'mouse-long-line', via: 'mouse', section: 'Mouse', find: 'because it keeps going and going', color: 5 },
 	{ id: 'mouse-native', via: 'mouse', section: 'Mouse', find: 'sentence and another', color: 1, after: 'Native:' },
 	{ id: 'mouse-two-lines', via: 'mouse', section: 'Mouse', find: 'are stored as separate lines', color: 2 },
+	// --- end of the note (the caret has to go on a new empty line, in the same undo step)
+	{ id: 'eof-sentence-newline', section: 'End of note', find: 'The last paragraph of the note ends here, with a closing sentence.', color: 1, undoCheck: true },
+	{ id: 'eof-sentence-no-newline', section: 'End of note', find: 'The last paragraph of the note ends here, with a closing sentence.', color: 2, trimEnd: true, undoCheck: true },
+	{ id: 'eof-last-word', section: 'End of note', find: 'closing sentence', color: 3, trimEnd: true, undoCheck: true },
+	{ id: 'eof-last-word-newline', section: 'End of note', find: 'closing sentence', color: 4, undoCheck: true },
+	{
+		id: 'eof-recolor-last-mark',
+		section: 'End of note',
+		prepare: (d) => d.replace('The last paragraph of the note ends here, with a closing sentence.', 'The note ends with <mark style="background: #FFD60A55;">a yellow mark</mark>'),
+		after: 'The note ends with',
+		find: '<mark style="background: #FFD60A55;">a yellow mark</mark>',
+		color: 5,
+		trimEnd: true,
+		undoCheck: true,
+	},
+	{
+		id: 'eof-pen-last-mark',
+		section: 'End of note',
+		prepare: (d) => d.replace('The last paragraph of the note ends here, with a closing sentence.', 'The note ends with <mark style="background: #FFD60A55;">a yellow mark</mark>.'),
+		after: 'The note ends with',
+		find: 'yellow m',
+		color: 1,
+		undoCheck: true,
+	},
+	// --- large selections (owner bug: raw <mark> after highlighting a big selection)
+	{ id: 'big-owner-selection', section: 'Large selections', prepare: () => SAMPLE, find: SAMPLE.slice(BIG_FROM, BIG_TO), color: 3, undoCheck: true },
+	{ id: 'big-owner-selection-mouse', via: 'mouse', section: 'Large selections', prepare: () => SAMPLE, find: SAMPLE.slice(BIG_FROM, SAMPLE.indexOf('## Already colored') + 30), color: 3 },
+	{ id: 'select-all-sample', section: 'Large selections', prepare: () => SAMPLE, all: true, color: 2, undoCheck: true },
+	{ id: 'select-all-lists', section: 'Large selections', prepare: () => LISTS, all: true, color: 4, undoCheck: true },
+	{ id: 'whole-paragraph', section: 'Large selections', find: 'A paragraph before the indented code block.', color: 1 },
+	{ id: 'whole-heading', section: 'Large selections', find: 'Indented code', color: 2 },
+	{ id: 'starts-inside-native', section: 'Large selections', find: 'native highlight== in a sentence and another ==second native one== here.', color: 3 },
+	{ id: 'indented-code-only', section: 'Indented code', find: 'indented code line one with **stars** and [[a link]]\n    indented code line two', color: 4, nothing: true },
+	{ id: 'indented-code-across', section: 'Indented code', find: 'A paragraph before the indented code block.\n\n    indented code line one', color: 5 },
+	// --- selection on a deep nested bullet (the lines above are needed to tell it from indented code)
+	{ id: 'deep-bullet-level3', section: 'Deep lists', find: 'Deeper nested item', color: 2, painted: ['Deeper nested item'] },
+	{ id: 'deep-bullet-level4', section: 'Deep lists', find: 'Deepest nested item', color: 3, painted: ['Deepest nested item'] },
+	{ id: 'deep-bullet-whole-line', section: 'Deep lists', find: '        - Deepest nested item', color: 4, painted: ['Deepest nested item'] },
 ];

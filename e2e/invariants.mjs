@@ -29,8 +29,19 @@ export function forbiddenRegions(stripped) {
 	const lines = stripped.split('\n');
 	let fmEnd = -1;
 	if (lines[0] === '---') fmEnd = lines.findIndex((l, i) => i > 0 && (l === '---' || l === '...'));
+	let prevBlank = true;
+	let inList = false;
 	lines.forEach((line, i) => {
 		const end = pos + line.length;
+		const blank = line.trim() === '';
+		const indentedCode = !blank && /^(?: {4,}|\t)/.test(line) && !inList && (prevBlank || out.some((r) => r.why === 'indented code' && r.end === pos));
+		if (!blank && !indentedCode) inList = /^\s*(?:[-*+]|\d+[.)])\s/.test(line) ? true : /^\s{2,}/.test(line) ? inList : false;
+		prevBlank = blank;
+		if (indentedCode && i > fmEnd) {
+			out.push({ start: pos, end: end + 1, why: 'indented code' });
+			pos = end + 1;
+			return;
+		}
 		const f = /^\s*(`{3,}|~{3,})/.exec(line);
 		const isMath = /^\s*\$\$\s*$/.test(line);
 		if (i <= fmEnd) out.push({ start: pos, end: end + 1, why: 'properties' });
@@ -92,6 +103,8 @@ const count = (s, t) => s.split(t).length - 1;
 /** Violations of "the note still means the same" after an edit from `before` to `after`. */
 export function violations(before, after, color) {
 	const v = [];
+	// A highlight at the very end of a note appends one "\n" for the caret (same undo step): not a change of the note.
+	if (!before.endsWith('\n') && after.endsWith('\n') && after.slice(0, -1).split('\n').length === before.split('\n').length) after = after.slice(0, -1);
 	// (a) visible text unchanged
 	if (strip(after) !== strip(before)) v.push('visible text changed');
 	// (b) structure: same lines outside the touched ones, same syntax tokens, same prefixes
@@ -108,7 +121,7 @@ export function violations(before, after, color) {
 	const stripLines = strip(before).split('\n');
 	stripLines.forEach((line, i) => {
 		const end = pos + line.length;
-		const r = regions.find((x) => x.start <= pos && x.end >= end && /properties|code block|math block|fence|math fence|rule/.test(x.why));
+		const r = regions.find((x) => x.start <= pos && x.end >= end && /properties|code block|math block|fence|math fence|rule|indented code/.test(x.why));
 		const same = (x, y) => (r && /table/.test(r.why) ? canonTableLine(x) === canonTableLine(y) : x === y);
 		if (r && !same(noMarks(al[i] ?? ''), noMarks(bl[i] ?? ''))) v.push(`${r.why} line ${i + 1} changed`);
 		if (r && !same(al[i] ?? '', bl[i] ?? '')) v.push(`${r.why} line ${i + 1} not byte-identical`);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { blockPrefixLength, lineRuns, paintableRuns } from './runs';
+import { blockPrefixLength, blockStateAfter, lineRuns, paintableRuns } from './runs';
 
 /** The plain-text runs of a single line, as strings. */
 const runs = (line: string) => lineRuns(line).map(([s, e]) => line.slice(s, e));
@@ -89,5 +89,39 @@ describe('block structure', () => {
 	});
 	it('a list item nested fence is code', () => {
 		expect(doc('- item\n\n  ```bash\n  echo hi\n  ```\n\n- next')).toEqual(['item', 'next']);
+	});
+});
+
+describe('indented code blocks are never painted', () => {
+	it('4 spaces or a tab after a blank line is code', () => {
+		expect(doc('para\n\n    code line\n    more code\n\nafter')).toEqual(['para', 'after']);
+		expect(doc('para\n\n\tcode\n\nafter')).toEqual(['para', 'after']);
+		expect(doc('    code at the very start\nplain line')).toEqual(['plain line']);
+	});
+	it('indented text right after a paragraph line is a continuation, not code', () => {
+		expect(doc('para\n    continued')).toEqual(['para', '    continued']);
+	});
+	it('indented content of a list item is not code', () => {
+		expect(doc('- item\n\n    second paragraph\n\nafter')).toEqual(['item', '    second paragraph', 'after']);
+		expect(doc('1. one\n\n        deeper\n\nafter')).toEqual(['one', '        deeper', 'after']);
+	});
+	it('after the list ends the next indented block is code again', () => {
+		expect(doc('- item\n\nplain\n\n    code\n')).toEqual(['item', 'plain']);
+	});
+});
+
+describe('block state from the lines above', () => {
+	it('a deep bullet seen without its parents is code, with the state from above it is not', () => {
+		const text = '        - deep';
+		expect(paintableRuns(text)).toEqual([]);
+		const st = blockStateAfter(['- a', '    - b']);
+		expect(paintableRuns(text, null, 0, st)).toHaveLength(1);
+	});
+	it('the state after a paragraph and a blank line makes the next indented line code', () => {
+		const st = blockStateAfter(['A paragraph.', '']);
+		expect(paintableRuns('    code', null, 0, st)).toEqual([]);
+	});
+	it('look through blockquote prefixes', () => {
+		expect(doc('> q\n>\n>     code\n> after')).toEqual(['q', 'after'].map((x) => x));
 	});
 });

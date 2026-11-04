@@ -1,8 +1,8 @@
 # End-to-end report
 
-Run: 2026-11-04T12:40:37.918Z against "Sample text - Color Highlighter Test Vault - Obsidian 1.15.0"
+Run: 2026-11-04T17:49:14.021Z against "Sample text - Color Highlighter Test Vault - Obsidian 1.15.0"
 
-**80 of 80 cases pass.**
+**101 of 102 cases pass.**
 
 | Case | Section | Selected via | Source | Live Preview | Reading view | Problems | Screenshots |
 |---|---|---|---|---|---|---|---|
@@ -86,3 +86,25 @@ Run: 2026-11-04T12:40:37.918Z against "Sample text - Color Highlighter Test Vaul
 | mouse-plain | Mouse | mouse | pass | pass | pass |  |  |
 | mouse-bold | Mouse | mouse | pass | pass | pass |  |  |
 | mouse-heading | Mouse | mouse | pass | pass | pass |  |  |
+| mouse-list | Mouse | mouse | pass | pass | pass |  |  |
+| mouse-quote | Mouse | mouse | pass | pass | pass |  |  |
+| mouse-callout-body | Mouse | mouse | FAIL | pass | pass | the picker did not open; changed lines:  | shots/mouse-callout-body-source.png |
+| mouse-emoji | Mouse | mouse | pass | pass | pass |  |  |
+| mouse-long-line | Mouse | mouse | pass | pass | pass |  |  |
+| mouse-native | Mouse | mouse | pass | pass | pass |  |  |
+| mouse-two-lines | Mouse | mouse | pass | pass | pass |  |  |
+| eof-sentence-newline | End of note | api | pass | pass | pass |  |  |
+| eof-sentence-no-newline | End of note | api | pass | pass | pass |  |  |
+| eof-last-word | End of note | api | pass | pass | pass |  |  |
+| eof-last-word-newline | End of note | api | pass | pass | pass |  |  |
+| eof-recolor-last-mark | End of note | api | pass | pass | pass |  |  |
+| eof-pen-last-mark | End of note | api | pass | pass | pass |  |  |
+| big-owner-selection | Large selections | api | pass | pass | pass |  |  |
+| big-owner-selection-mouse | Large selections | mouse | pass | pass | pass |  |  |
+| select-all-sample | Large selections | api | pass | pass | pass |  |  |
+| select-all-lists | Large selections | api | pass | pass | pass |  |  |
+| whole-paragraph | Large selections | api | pass | pass | pass |  |  |
+| whole-heading | Large selections | api | pass | pass | pass |  |  |
+| starts-inside-native | Large selections | api | pass | pass | pass |  |  |
+| indented-code-only | Indented code | api | pass | - | - |  |  |
+| indented-code-across | Indented code | api | pass | pass | pass |  |  |

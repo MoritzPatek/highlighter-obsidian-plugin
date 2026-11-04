@@ -26,7 +26,7 @@ Select the word **banana** in this line: I would like a banana today.
 - [ ] While it is open, press Cmd+C: the popover closes and the text is copied. Typing, Space, Backspace/Delete (the selected text is deleted) and Shift+arrows also close it and work as usual.
 - [ ] Select with Shift+arrows or Cmd+A: no popover appears (Cmd+H still opens it).
 - [ ] Click an already colored highlight: the picker opens, with the dashed X. Pick another color: the highlight changes. A click on other inline HTML (for example a `<kbd>`) does not open it.
-- [ ] After choosing a color the caret sits just after the highlight and the highlight renders at once (no raw `<mark ...>` text), also when an emoji or accented letter follows it. Exception: at the very end of the note the `<mark>` source shows until you click elsewhere or press Enter.
+- [ ] After choosing a color the caret sits just after the highlight and the highlight renders at once (no raw `<mark ...>` text), also when an emoji or accented letter follows it. At the very end of the note (also when only a final `.` follows) one empty line is added for the caret, so it renders at once; a single Cmd+Z removes the highlight and that line together. Try it on the last sentence of a note with and without a trailing newline, and when recoloring the last highlight.
 - [ ] Drag across part of a `**bold**` word: before you choose, the selection grows to cover the whole bold run. Dragging over part of a highlight does NOT grow the selection (pen: only what you select is painted).
 - [ ] Dragging a new selection moves the popover to the new place. Clicking elsewhere closes it.
 - [ ] Settings -> Color Highlighter -> "Show picker when selecting text" off: selecting with the mouse no longer opens it. Cmd+H still does.

@@ -39,7 +39,7 @@
  */
 
 import { codeRanges, endsInsideFence, type Fence } from './blocks';
-import { paintableRuns } from './runs';
+import { paintableRuns, type BlockState } from './runs';
 export { codeRanges, endsInsideFence, type Fence };
 
 export interface TextEdit {
@@ -464,10 +464,11 @@ export function highlightPieces(
 	to: number,
 	fence: Fence | null = null,
 	frontLines = 0,
+	block: BlockState | null = null,
 ): [number, number][] {
 	const [a, b] = highlightRange(text, from, to, fence);
 	const pieces: [number, number][] = [];
-	for (const [rs, re] of paintableRuns(text, fence, frontLines)) {
+	for (const [rs, re] of paintableRuns(text, fence, frontLines, block)) {
 		const s = Math.max(a, rs);
 		const e = Math.min(b, re);
 		if (e > s && text.slice(s, e).trim() !== '') pieces.push([s, e]);
@@ -551,6 +552,7 @@ export function applyHighlight(
 	color: string,
 	fence: Fence | null = null,
 	frontLines = 0,
+	block: BlockState | null = null,
 ): TextEdit | null {
 	const [a, b] = normalizeRange(text, from, to);
 	const touched = touchedSpans(text, a, b, fence);
@@ -571,7 +573,7 @@ export function applyHighlight(
 	}
 
 	// Every plain-text piece of the selection is painted on its own, so a highlight never contains syntax.
-	const pieces = highlightPieces(text, a, b, fence, frontLines);
+	const pieces = highlightPieces(text, a, b, fence, frontLines, block);
 	let working = text;
 	const edits: TextEdit[] = [];
 	for (const [ps, pe] of [...pieces].reverse()) {
