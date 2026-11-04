@@ -3,6 +3,7 @@ import {
 	clampIndex,
 	computePopoverPosition,
 	digitToIndex,
+	firstCharLength,
 	moveIndex,
 	shouldAutoShow,
 	type AutoShowInput,
@@ -112,5 +113,15 @@ describe('shouldAutoShow', () => {
 		['picker already open', { pickerOpen: true }],
 	] as [string, Partial<AutoShowInput>][])('does not show: %s', (_n, patch) => {
 		expect(shouldAutoShow({ ...ok, ...patch })).toBe(false);
+	});
+});
+
+describe('firstCharLength', () => {
+	it('handles ascii, empty, surrogate pairs and combining marks', () => {
+		expect(firstCharLength('')).toBe(0);
+		expect(firstCharLength('a b')).toBe(1);
+		expect(firstCharLength('\u{1F389} party')).toBe(2);
+		expect(firstCharLength('e\u0301 x')).toBe(2); // e + combining acute
+		expect(firstCharLength('\u{1F44D}\u{1F3FD}')).toBe(2); // skin-tone modifier is a separate symbol, not a combining mark
 	});
 });

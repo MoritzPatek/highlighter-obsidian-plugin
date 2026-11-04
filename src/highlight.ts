@@ -23,8 +23,9 @@
  *   the combined range is wrapped once in the new color. So selecting part of
  *   a highlighted phrase recolors the whole phrase.
  * - Empty selection: the cursor inside an existing highlight recolors it;
- *   otherwise an empty `<mark ...></mark>` is inserted and the cursor is
- *   placed between the tags so the user can start typing highlighted text.
+ *   otherwise an empty `<mark ...></mark>` is inserted with the cursor between
+ *   the tags. (The plugin's commands do not use this: with nothing selected
+ *   and no highlight under the cursor they show a notice instead.)
  * - Multi-line selections are wrapped per line, because an inline HTML tag
  *   that spans a paragraph break does not render. Blank lines are skipped.
  *   Leading list/quote/heading markers (`- `, `1. `, `> `, `# `, `- [ ] `)

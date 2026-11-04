@@ -14,6 +14,7 @@ import {
 	type HighlightState,
 	type TextEdit,
 } from './highlight';
+import { firstCharLength } from './pickerLogic';
 
 export interface Pos {
 	line: number;
@@ -96,8 +97,10 @@ export function applyEdit(
 		if (idx >= 0) {
 			end = edit.from + idx + closing.length;
 			const pos = at(end);
-			if (pos.ch < editor.getLine(pos.line).length) end += 1;
+			const step = firstCharLength(editor.getLine(pos.line).slice(pos.ch));
+			if (step > 0) end += step; // one whole character (code point plus combining marks)
 			else if (pos.line + 1 < editor.lineCount()) end += 1; // the newline: start of next line
+			// else: end of the note, the caret stays next to </mark> and Live Preview shows the source
 		}
 	}
 	editor.setCursor(at(end));

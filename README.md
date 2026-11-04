@@ -68,6 +68,8 @@ All commands are in the command palette (Cmd+P) under "Color Highlighter".
 - Selections that span several lines are highlighted line by line (a highlight cannot cross a paragraph break and still render). Blank lines are skipped.
 - List bullets, numbers, checkboxes, quote markers and heading markers stay outside the highlight, so lists, tasks and headings keep working. In tables, each cell is highlighted on its own.
 - Only the first cursor is used if you have several.
+- After a highlight is applied the caret sits just after it, so it renders at once. At the very end of a note there is nothing after it, so Live Preview keeps showing the `<mark …>` source until you click elsewhere or press Enter.
+- Clicking an already colored highlight opens the picker (with auto-show on), so you can switch its color or remove it. Before you choose, the selection is widened to the whole highlight or formatted run that will be marked.
 - Code is left alone: highlighting or removing inside inline code or fenced code blocks (``` or ~~~) is refused with a notice. Indented code blocks are not detected.
 
 ## Hotkey

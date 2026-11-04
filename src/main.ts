@@ -82,9 +82,9 @@ export default class ColorHighlighterPlugin extends Plugin {
 				pressed = {
 					pointerType: evt.pointerType,
 					inEditor: !!target?.closest?.('.markdown-source-view .cm-editor'),
-					// A rendered inline HTML element (e.g. a <mark>): Obsidian selects its whole source
+					// A rendered <mark> widget (not <kbd>, <span>, ...): Obsidian selects its whole source
 					// a moment after the click, so the selection may not exist yet at the first check.
-					inWidget: !!target?.closest?.('.cm-html-embed'),
+					inWidget: !!target?.closest?.('.cm-html-embed')?.querySelector('mark'),
 				};
 			},
 			true,

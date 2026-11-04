@@ -25,6 +25,9 @@ Select the word **banana** in this line: I would like a banana today.
 - [ ] Select a few words by dragging with the mouse (or double-click a word). After a moment the same popover appears under the selection, without pressing Cmd+H.
 - [ ] While it is open, press Cmd+C: the popover closes and the text is copied. Typing, Space, Backspace/Delete (the selected text is deleted) and Shift+arrows also close it and work as usual.
 - [ ] Select with Shift+arrows or Cmd+A: no popover appears (Cmd+H still opens it).
+- [ ] Click an already colored highlight: the picker opens, with the dashed X. Pick another color: the highlight changes. A click on other inline HTML (for example a `<kbd>`) does not open it.
+- [ ] After choosing a color the caret sits just after the highlight and the highlight renders at once (no raw `<mark ...>` text), also when an emoji or accented letter follows it. Exception: at the very end of the note the `<mark>` source shows until you click elsewhere or press Enter.
+- [ ] Drag across part of a `==native==` highlight (or a `**bold**` word): before you choose, the selection grows to cover the whole highlight or bold run that will be marked.
 - [ ] Dragging a new selection moves the popover to the new place. Clicking elsewhere closes it.
 - [ ] Settings -> Color Highlighter -> "Show picker when selecting text" off: selecting with the mouse no longer opens it. Cmd+H still does.
 
@@ -34,13 +37,13 @@ Select the word **banana** in this line: I would like a banana today.
 
 ## 2. Recolor, never nest
 
-- [ ] Select the highlighted word again, press Cmd+H, pick another color. The color changes. Switch the note to source mode (Cmd+P, "Toggle Live Preview/Source mode"): there is only ONE `<mark ...>` around the word, not two.
+- [ ] Click the highlighted word, pick another color in the picker (or press Cmd+H after clicking it). The color changes. Switch the note to source mode (Cmd+P, "Toggle Live Preview/Source mode"): there is only ONE `<mark ...>` around the word, not two.
 - [ ] Select only part of a highlighted phrase and pick a color. The whole phrase takes the new color.
 - [ ] Select from plain text into a highlighted phrase and pick a color. Everything becomes one highlight.
 
 ## 3. Remove
 
-- [ ] Select a highlighted word and press Cmd+H. The popover shows an extra dashed X button ("Remove highlight"). Press 0 or click it. The text stays, the highlight is gone.
+- [ ] Click a highlighted word (or put the cursor in it and press Cmd+H). The popover shows an extra dashed X button ("Remove highlight"). Press 0 or click it. The text stays, the highlight is gone.
 - [ ] Run "Remove highlight" from the command palette (Cmd+P) on a highlighted word. Same result.
 - [ ] Run "Remove highlight" on plain text. Nothing happens, no error.
 

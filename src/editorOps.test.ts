@@ -152,6 +152,19 @@ describe('editor glue with a fake editor', () => {
 		expect(ed.sel.from).toBe(ed.sel.to);
 	});
 
+	it('steps over a whole emoji (surrogate pair) after the mark', () => {
+		const ed = new FakeEditor('one two\u{1F389}x', 4, 7);
+		highlightSelection(ed, YELLOW);
+		expect(ed.doc.slice(0, ed.sel.from).endsWith('</mark>\u{1F389}')).toBe(true);
+		expect(ed.doc.slice(ed.sel.from)).toBe('x');
+	});
+
+	it('steps over a combining accent after the mark', () => {
+		const ed = new FakeEditor('one two\u0065\u0301x', 4, 7);
+		highlightSelection(ed, YELLOW);
+		expect(ed.doc.slice(ed.sel.from)).toBe('x');
+	});
+
 	it('at the end of a line the caret goes to the start of the next line', () => {
 		const ed = new FakeEditor('one two\nnext', 4, 7);
 		highlightSelection(ed, YELLOW);

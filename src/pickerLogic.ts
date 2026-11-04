@@ -108,3 +108,12 @@ export function shouldAutoShow(i: AutoShowInput): boolean {
 	if (i.selectionCount !== 1) return false;
 	return i.from !== i.to;
 }
+
+/**
+ * UTF-16 length of the first user-visible character of `rest`: one code point
+ * (a surrogate pair counts as one) plus any combining marks after it. 0 for "".
+ */
+export function firstCharLength(rest: string): number {
+	const m = /^(?:[\uD800-\uDBFF][\uDC00-\uDFFF]|[^])\p{M}*/u.exec(rest);
+	return m ? m[0].length : 0;
+}
