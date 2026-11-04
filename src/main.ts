@@ -1,14 +1,14 @@
 import { Editor, MarkdownView, Notice, Platform, Plugin } from 'obsidian';
 import { openColorPicker } from './colorPicker';
 import {
-	applyHighlight,
-	getHighlightState,
-	removeHighlight,
-	endsInsideFence,
-	type Fence,
-	selectionTouchesCode,
-	type TextEdit,
-} from './highlight';
+	captureSelection,
+	restoreSelection,
+	getSelectionContext,
+	getState,
+	highlightSelection,
+	removeSelectionHighlight,
+	touchesCode,
+} from './editorOps';
 import { shouldAutoShow } from './pickerLogic';
 import { ColorHighlighterSettingTab } from './settingsTab';
 import {
@@ -16,17 +16,6 @@ import {
 	sanitizeSettings,
 	type ColorHighlighterSettings,
 } from './settings';
-
-/** The text of the lines touched by the selection, and the selection inside it. */
-interface SelectionContext {
-	/** Document offset of the start of the first touched line. */
-	base: number;
-	text: string;
-	from: number;
-	to: number;
-	/** The selection starts inside a fenced code block opened above. */
-	fence: Fence | null;
-}
 
 export default class ColorHighlighterPlugin extends Plugin {
 	settings: ColorHighlighterSettings = DEFAULT_SETTINGS;
@@ -140,9 +129,9 @@ export default class ColorHighlighterPlugin extends Plugin {
 	}
 
 	private async highlightWithPicker(editor: Editor, auto = false) {
-		const ctx = this.getSelectionContext(editor);
-		if (this.refuseInCode(ctx, auto)) return;
-		const state = getHighlightState(ctx.text, ctx.from, ctx.to, ctx.fence);
+		const ctx = getSelectionContext(editor);
+		if (this.refuseInCode(touchesCode(ctx), auto)) return;
+		const state = getState(ctx);
 		// Nothing selected and the caret is not inside a highlight: nothing to color.
 		if (!auto && ctx.from === ctx.to && !state.highlighted) {
 			new Notice('Select some text to highlight.');
@@ -150,6 +139,7 @@ export default class ColorHighlighterPlugin extends Plugin {
 		}
 
 		if (this.pickerOpen) return;
+		const snapshot = captureSelection(editor);
 		this.pickerOpen = true;
 		let choice;
 		try {
@@ -167,6 +157,8 @@ export default class ColorHighlighterPlugin extends Plugin {
 			this.closePicker = null;
 		}
 		if (!choice) return;
+		// Apply to the selection the user saw when choosing, even if it moved meanwhile.
+		restoreSelection(editor, snapshot);
 		if (choice.type === 'remove') {
 			this.removeSelectionHighlight(editor);
 		} else {
@@ -177,58 +169,19 @@ export default class ColorHighlighterPlugin extends Plugin {
 	private async highlightWithColor(editor: Editor, index: number) {
 		const color = this.settings.colors[index];
 		if (!color) return;
-		// Re-read the selection: it may have changed while the picker was open.
-		const ctx = this.getSelectionContext(editor);
-		if (this.refuseInCode(ctx, false)) return;
-		this.applyEdit(editor, ctx, applyHighlight(ctx.text, ctx.from, ctx.to, color.color, ctx.fence));
+		// Re-read the selection at apply time: it may have changed while the picker was open.
+		if (this.refuseInCode(highlightSelection(editor, color.color) === 'code', false)) return;
 		this.settings.lastUsedIndex = index;
 		await this.saveSettings();
 	}
 
 	private removeSelectionHighlight(editor: Editor) {
-		const ctx = this.getSelectionContext(editor);
-		if (this.refuseInCode(ctx, false)) return;
-		this.applyEdit(editor, ctx, removeHighlight(ctx.text, ctx.from, ctx.to, ctx.fence));
+		this.refuseInCode(removeSelectionHighlight(editor) === 'code', false);
 	}
 
-	/** Code is never highlighted. Returns true (with a notice unless `quiet`) when the selection touches code. */
-	private refuseInCode(ctx: SelectionContext, quiet: boolean): boolean {
-		if (!selectionTouchesCode(ctx.text, ctx.from, ctx.to, ctx.fence)) return false;
-		if (!quiet) new Notice("Can't highlight inside code.");
-		return true;
-	}
-
-	/**
-	 * Only the primary selection is handled; with several cursors the others
-	 * are ignored.
-	 */
-	private getSelectionContext(editor: Editor): SelectionContext {
-		const a = editor.getCursor('from');
-		const b = editor.getCursor('to');
-		const startPos = { line: a.line, ch: 0 };
-		const endPos = { line: b.line, ch: editor.getLine(b.line).length };
-		const base = editor.posToOffset(startPos);
-		return {
-			base,
-			text: editor.getRange(startPos, endPos),
-			from: editor.posToOffset(a) - base,
-			to: editor.posToOffset(b) - base,
-			fence: endsInsideFence(editor.getRange({ line: 0, ch: 0 }, startPos)),
-		};
-	}
-
-	private applyEdit(editor: Editor, ctx: SelectionContext, edit: TextEdit | null) {
-		if (!edit) return;
-		const at = (offset: number) => editor.offsetToPos(ctx.base + offset);
-		editor.replaceRange(edit.insert, at(edit.from), at(edit.to));
-		// Collapse to the end of the affected text so typing continues after it.
-		// A non-empty highlight: put the caret after the closing tag.
-		let end = edit.selTo;
-		if (edit.selFrom !== edit.selTo) {
-			const closing = '</mark>';
-			const after = editor.getRange(at(end), at(end + closing.length));
-			if (after === closing) end += closing.length;
-		}
-		editor.setCursor(at(end));
+	/** Code is never highlighted. Shows a notice (unless `quiet`) and returns `touched`. */
+	private refuseInCode(touched: boolean, quiet: boolean): boolean {
+		if (touched && !quiet) new Notice("Can't highlight inside code.");
+		return touched;
 	}
 }
